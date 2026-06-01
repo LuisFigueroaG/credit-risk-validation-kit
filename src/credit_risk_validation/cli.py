@@ -26,6 +26,8 @@ app = typer.Typer(help="Credit Risk Validation Kit CLI.")
 datasets_app = typer.Typer(help="Dataset download and harness commands.")
 app.add_typer(datasets_app, name="datasets")
 
+DATASET_KEYS = ["give_me_some_credit", "default_credit_card_clients", "home_credit_stability"]
+
 
 @app.command("version")
 def version() -> None:
@@ -99,19 +101,29 @@ def pd_validate(
 
 @datasets_app.command("download")
 def datasets_download(
-    dataset: Annotated[str, typer.Option("--dataset", help="Dataset key or Kaggle slug.")],
+    dataset: Annotated[
+        str | None, typer.Option("--dataset", help="Dataset key or Kaggle slug.")
+    ] = None,
+    all_datasets: Annotated[
+        bool, typer.Option("--all", help="Download all configured datasets.")
+    ] = False,
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o")] = Path("data/raw"),
     unzip: Annotated[bool, typer.Option("--unzip/--no-unzip")] = True,
 ) -> None:
     """Download a Kaggle dataset or competition resource."""
 
-    path = download_kaggle_resource(dataset, output_dir=output_dir, unzip=unzip)
-    console.print(f"Downloaded: {path}")
+    selected = _selected_dataset_keys(dataset, all_datasets, default=None)
+    for key in selected:
+        path = download_kaggle_resource(key, output_dir=output_dir / key, unzip=unzip)
+        console.print(f"Downloaded: {path}")
 
 
 @datasets_app.command("prepare")
 def datasets_prepare(
-    dataset: Annotated[str, typer.Option("--dataset", help="Dataset key.")],
+    dataset: Annotated[str | None, typer.Option("--dataset", help="Dataset key.")] = None,
+    all_datasets: Annotated[
+        bool, typer.Option("--all", help="Prepare all configured datasets.")
+    ] = False,
     raw_dir: Annotated[Path, typer.Option("--raw-dir")] = Path("data/raw"),
     output_dir: Annotated[Path, typer.Option("--output-dir")] = Path("data/processed"),
     sample_size: Annotated[int | None, typer.Option("--sample-size")] = None,
@@ -119,21 +131,16 @@ def datasets_prepare(
 ) -> None:
     """Prepare a standardized reference/current split."""
 
-    normalized = _normalize_dataset_key(dataset)
-    if normalized == "give_me_some_credit":
-        paths = prepare_give_me_some_credit(raw_dir, output_dir, sample_size=sample_size, seed=seed)
-    elif normalized == "default_credit_card_clients":
-        paths = prepare_default_credit_card_clients(
-            raw_dir, output_dir, sample_size=sample_size, seed=seed
+    for normalized in _selected_dataset_keys(dataset, all_datasets, default=None):
+        paths = _prepare_dataset(
+            normalized,
+            raw_dir=raw_dir,
+            output_dir=output_dir,
+            sample_size=sample_size,
+            seed=seed,
         )
-    elif normalized == "home_credit_stability":
-        paths = prepare_home_credit_stability(
-            raw_dir, output_dir, sample_size=sample_size, seed=seed
-        )
-    else:
-        raise typer.BadParameter(f"Unknown dataset key: {dataset}")
-    for path in paths:
-        console.print(f"Prepared: {path}")
+        for path in paths:
+            console.print(f"Prepared: {path}")
 
 
 @datasets_app.command("run-harness")
@@ -148,11 +155,46 @@ def datasets_run_harness(
 
     from credit_risk_validation.datasets.baseline_model import run_dataset_harness
 
-    keys = ["give_me_some_credit", "default_credit_card_clients", "home_credit_stability"]
-    selected = keys if all_datasets else [_normalize_dataset_key(dataset or "give_me_some_credit")]
+    selected = _selected_dataset_keys(dataset, all_datasets, default="give_me_some_credit")
     for key in selected:
         result = run_dataset_harness(key, sample_size=sample_size)
         console.print(f"{key}: {result}")
+
+
+def _selected_dataset_keys(
+    dataset: str | None, all_datasets: bool, *, default: str | None
+) -> list[str]:
+    if all_datasets:
+        return DATASET_KEYS
+    if dataset is None:
+        if default is None:
+            raise typer.BadParameter("Pass --dataset or --all")
+        dataset = default
+    normalized = _normalize_dataset_key(dataset)
+    if normalized not in DATASET_KEYS and "/" not in normalized:
+        raise typer.BadParameter(f"Unknown dataset key: {dataset}")
+    return [normalized]
+
+
+def _prepare_dataset(
+    dataset: str,
+    *,
+    raw_dir: Path,
+    output_dir: Path,
+    sample_size: int | None,
+    seed: int,
+) -> list[Path]:
+    if dataset == "give_me_some_credit":
+        return prepare_give_me_some_credit(raw_dir, output_dir, sample_size=sample_size, seed=seed)
+    if dataset == "default_credit_card_clients":
+        return prepare_default_credit_card_clients(
+            raw_dir, output_dir, sample_size=sample_size, seed=seed
+        )
+    if dataset == "home_credit_stability":
+        return prepare_home_credit_stability(
+            raw_dir, output_dir, sample_size=sample_size, seed=seed
+        )
+    raise typer.BadParameter(f"Unknown dataset key: {dataset}")
 
 
 def _normalize_dataset_key(dataset: str) -> str:
