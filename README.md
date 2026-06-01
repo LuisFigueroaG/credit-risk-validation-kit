@@ -62,7 +62,7 @@ uv run crvk pd-validate \
 
 - Discrimination: AUC ROC, Gini, KS, lift table, bad rate by bin, event capture.
 - Calibration: Brier Score, Log Loss, calibration bins, ECE, MCE, O/E ratio,
-  calibration-in-the-large, calibration slope.
+  calibration-in-the-large, calibration intercept and calibration slope.
 - Stability: PSI for PD and score.
 - Segments: aggregate discrimination and calibration summaries by configured
   segments when sample size is sufficient.
