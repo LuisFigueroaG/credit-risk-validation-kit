@@ -40,10 +40,10 @@ def main() -> None:
     processed = Path(args.output_dir)
     for name in selected:
         try:
-            print(f"Preparing {name}")
+            print("Preparing configured dataset")
             PREPARE_FUNCS[name](raw, processed, sample_size=args.sample_size)
-        except Exception as exc:
-            print(f"Skipped {name}: {exc}")
+        except Exception:
+            print("Skipped configured dataset; inspect local inputs and retry")
 
 
 def _normalize(dataset: str) -> str:
