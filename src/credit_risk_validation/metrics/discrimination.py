@@ -99,7 +99,7 @@ def discrimination_from_frame(
 
     y_true = [int(value == validation.positive_class) for value in frame[target_col].to_list()]
     risk_score = [float(value) for value in frame[score_col].to_list()]
-    if validation.score_direction == "lower_is_riskier":
+    if validation.score_direction in {"lower_is_riskier", "higher_is_safer"}:
         risk_score = [-value for value in risk_score]
     sample_weight = (
         [float(value) for value in frame[weight_col].to_list()]

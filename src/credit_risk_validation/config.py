@@ -71,6 +71,17 @@ class ValidationOptions(BaseModel):
             raise ValueError("n_bins must be at least 2")
         return value
 
+    @field_validator("score_direction")
+    @classmethod
+    def _supported_score_direction(cls, value: str) -> str:
+        normalized = value.lower()
+        supported = {"higher_is_riskier", "lower_is_riskier", "higher_is_safer"}
+        if normalized not in supported:
+            raise ValueError(
+                "score_direction must be one of: higher_is_riskier, lower_is_riskier, higher_is_safer"
+            )
+        return normalized
+
 
 class ThresholdConfig(BaseModel):
     """Thresholds de severidad para metricas clave."""
