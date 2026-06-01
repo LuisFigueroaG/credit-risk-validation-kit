@@ -1,0 +1,41 @@
+model:
+  name: "Home Credit Stability Sample Baseline PD"
+  version: "0.1.0"
+  horizon: "12m"
+  owner: "risk-modeling"
+  purpose: "Credit risk PD validation sample"
+
+columns:
+  target: "target"
+  pd: "pd"
+  score: "score"
+  period: null
+  weight: null
+  id: null
+  segments: []
+
+validation:
+  positive_class: 1
+  n_bins: 10
+  min_bin_size: 100
+  min_events: 20
+  min_non_events: 20
+  min_rows: 100
+  score_direction: "lower_is_riskier"
+  clip_pd:
+    enabled: true
+    lower: 0.000001
+    upper: 0.999999
+
+thresholds:
+  psi:
+    warning: 0.10
+    critical: 0.25
+
+report:
+  language: "en"
+  title: "Home Credit Stability PD Validation Report"
+  include_charts: true
+  include_model_card: true
+  include_methodology: true
+  anonymize: true

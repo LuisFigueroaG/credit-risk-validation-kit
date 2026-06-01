@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "Credit Risk Validation Kit"
+message: "If you use this software, please cite it using this metadata."
+type: software
+authors:
+  - name: "Credit Risk Validation Kit Contributors"
+repository-code: "https://github.com/LuisFigueroaG/credit-risk-validation-kit"
+license: Apache-2.0
+version: "0.1.0"
+date-released: "2026-06-01"
