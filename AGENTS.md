@@ -11,9 +11,9 @@ Project instructions for autonomous agents working in this repository.
 
 ## Git Workflow
 
-- Use `master` as the primary branch for this repository.
-- Create short-lived feature branches from `master` for implementation work.
-- Move changes back to `master` through reviewable commits and pull requests.
+- Use `develop` as the active development branch for implementation work.
+- Use `master` as the protected release/default branch.
+- Move changes from `develop` back to `master` through reviewable commits and pull requests.
 - Before starting implementation, check the current branch and worktree state.
 - Commit logically grouped changes with clear messages once the work is verified.
 - Push the working branch and open or update a PR when the change is ready for review.

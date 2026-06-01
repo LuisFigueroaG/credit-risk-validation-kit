@@ -1,0 +1,15 @@
+site_name: Credit Risk Validation Kit
+site_description: Validation and reporting layer for binary PD credit risk models.
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Validation Methodology: validation-methodology.md
+  - Metrics: metrics.md
+  - Calibration: calibration.md
+  - Stability: stability.md
+  - Reporting: reporting.md
+  - Datasets: datasets.md
+  - Open Source Governance: open-source-governance.md
+  - Regulatory Notes: regulatory-notes.md
