@@ -31,6 +31,15 @@ def calibration_metrics(
             "ece": MetricResult("ece", None, Status.INSUFFICIENT_DATA, message),
             "mce": MetricResult("mce", None, Status.INSUFFICIENT_DATA, message),
             "oe_ratio": MetricResult("oe_ratio", None, Status.INSUFFICIENT_DATA, message),
+            "calibration_in_the_large": MetricResult(
+                "calibration_in_the_large", None, Status.INSUFFICIENT_DATA, message
+            ),
+            "calibration_intercept": MetricResult(
+                "calibration_intercept", None, Status.INSUFFICIENT_DATA, message
+            ),
+            "calibration_slope": MetricResult(
+                "calibration_slope", None, Status.INSUFFICIENT_DATA, message
+            ),
         }, empty
 
     target = np.asarray(y_true, dtype=int)
@@ -52,6 +61,9 @@ def calibration_metrics(
     observed_events = float(np.sum(target * weight))
     expected_events = float(np.sum(pd_values * weight))
     oe_ratio = observed_events / expected_events if expected_events > 0 else None
+    calibration_intercept, calibration_slope = _calibration_intercept_and_slope(
+        target, pd_values, weight
+    )
     return {
         "brier": MetricResult(
             "brier", float(brier_score_loss(target, pd_values, sample_weight=weight))
@@ -65,9 +77,8 @@ def calibration_metrics(
         "calibration_in_the_large": MetricResult(
             "calibration_in_the_large", float(np.average(target - pd_values, weights=weight))
         ),
-        "calibration_slope": MetricResult(
-            "calibration_slope", _calibration_slope(target, pd_values, weight)
-        ),
+        "calibration_intercept": MetricResult("calibration_intercept", calibration_intercept),
+        "calibration_slope": MetricResult("calibration_slope", calibration_slope),
     }, table
 
 
@@ -180,15 +191,17 @@ def _wilson_interval(
     )
 
 
-def _calibration_slope(
+def _calibration_intercept_and_slope(
     y_true: np.ndarray, y_pred_pd: np.ndarray, weight: np.ndarray
-) -> float | None:
+) -> tuple[float | None, float | None]:
     try:
         from sklearn.linear_model import LogisticRegression
 
         x = logit(np.clip(y_pred_pd, EPSILON, 1 - EPSILON)).reshape(-1, 1)
         model = LogisticRegression(fit_intercept=True, solver="lbfgs")
         model.fit(x, y_true, sample_weight=weight)
-        return float(model.coef_[0][0])
+        intercept = float(np.ravel(model.intercept_)[0])
+        slope = float(np.ravel(model.coef_)[0])
+        return intercept, slope
     except Exception:
-        return None
+        return None, None

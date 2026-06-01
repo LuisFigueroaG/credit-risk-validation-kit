@@ -22,6 +22,25 @@ def test_oe_ratio() -> None:
     assert metrics["oe_ratio"].value == pytest.approx(1.0)
 
 
+def test_calibration_intercept_and_slope_are_reported() -> None:
+    metrics, _ = calibration_metrics(
+        [0, 0, 0, 1, 1, 1],
+        [0.05, 0.10, 0.20, 0.65, 0.80, 0.90],
+        n_bins=3,
+    )
+    assert metrics["calibration_intercept"].value is not None
+    assert metrics["calibration_slope"].value is not None
+
+
+def test_calibration_intercept_and_slope_are_insufficient_for_single_class() -> None:
+    metrics, table = calibration_metrics([0, 0, 0], [0.1, 0.2, 0.3], n_bins=2)
+    assert table.is_empty()
+    assert metrics["calibration_intercept"].status.value == "INSUFFICIENT_DATA"
+    assert metrics["calibration_intercept"].value is None
+    assert metrics["calibration_slope"].status.value == "INSUFFICIENT_DATA"
+    assert metrics["calibration_slope"].value is None
+
+
 def test_calibration_table_contains_audit_fields() -> None:
     _, table = calibration_metrics([0, 1, 0, 1], [0.2, 0.4, 0.6, 0.8], n_bins=2)
 

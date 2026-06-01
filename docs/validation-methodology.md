@@ -31,8 +31,10 @@ Calibration evaluates probability levels. A model can rank borrowers well and
 still systematically overpredict or underpredict default rates. Brier Score
 penalizes squared probability error. Log Loss penalizes confident wrong
 probabilities. Calibration-in-the-large measures average observed minus expected
-default rate. Calibration slope measures whether probabilities are too extreme
-or too compressed. O/E ratio compares observed defaults with expected defaults.
+default rate. Calibration intercept measures systematic offset after logit
+transformation, and calibration slope measures whether probabilities are too
+extreme or too compressed. O/E ratio compares observed defaults with expected
+defaults.
 
 ## Stability
 
