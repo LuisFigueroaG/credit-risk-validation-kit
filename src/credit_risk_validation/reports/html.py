@@ -71,13 +71,17 @@ def render_html_report(result: "PDValidationResult") -> str:
         <tbody>
           <tr><th>Model</th><td>{escape(model.name)}</td></tr>
           <tr><th>Model Version</th><td>{escape(model.version)}</td></tr>
+          <tr><th>Library Version</th><td>{_metadata_value(result, "library_version")}</td></tr>
           <tr><th>Generated At</th><td>{escape(result.created_at)}</td></tr>
           <tr><th>PD Horizon</th><td>{escape(model.horizon)}</td></tr>
           <tr><th>Target Column</th><td><code>{escape(columns.target)}</code></td></tr>
           <tr><th>PD Column</th><td><code>{escape(columns.pd)}</code></td></tr>
           <tr><th>Score Column</th><td><code>{escape(str(columns.score))}</code></td></tr>
-          <tr><th>Reference Rows</th><td>{escape(str(result.metadata.get("reference_rows")))}</td></tr>
-          <tr><th>Current Rows</th><td>{escape(str(result.metadata.get("current_rows")))}</td></tr>
+          <tr><th>Reference Rows</th><td>{_metadata_value(result, "reference_rows")}</td></tr>
+          <tr><th>Current Rows</th><td>{_metadata_value(result, "current_rows")}</td></tr>
+          <tr><th>Config SHA-256</th><td><code>{_metadata_value(result, "config_sha256")}</code></td></tr>
+          <tr><th>Reference Schema SHA-256</th><td><code>{_metadata_value(result, "reference_schema_sha256")}</code></td></tr>
+          <tr><th>Current Schema SHA-256</th><td><code>{_metadata_value(result, "current_schema_sha256")}</code></td></tr>
         </tbody>
       </table>
     </section>
@@ -163,6 +167,11 @@ def _chart_sections(result: "PDValidationResult") -> dict[str, str]:
         sections[section] += _figure_html(figure, include_plotlyjs=include_plotlyjs)
         include_plotlyjs = False
     return sections
+
+
+def _metadata_value(result: "PDValidationResult", key: str) -> str:
+    value = result.metadata.get(key)
+    return escape("not available" if value is None else str(value))
 
 
 def _lift_chart(result: "PDValidationResult") -> go.Figure | None:
