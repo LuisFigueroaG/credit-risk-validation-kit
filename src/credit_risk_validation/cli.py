@@ -101,9 +101,7 @@ def pd_validate(
 
 @datasets_app.command("download")
 def datasets_download(
-    dataset: Annotated[
-        str | None, typer.Option("--dataset", help="Dataset key or Kaggle slug.")
-    ] = "",
+    dataset: Annotated[str, typer.Option("--dataset", help="Dataset key or Kaggle slug.")] = "",
     all_datasets: Annotated[
         bool, typer.Option("--all", help="Download all configured datasets.")
     ] = False,
@@ -120,7 +118,7 @@ def datasets_download(
 
 @datasets_app.command("prepare")
 def datasets_prepare(
-    dataset: Annotated[str | None, typer.Option("--dataset", help="Dataset key.")] = "",
+    dataset: Annotated[str, typer.Option("--dataset", help="Dataset key.")] = "",
     all_datasets: Annotated[
         bool, typer.Option("--all", help="Prepare all configured datasets.")
     ] = False,
