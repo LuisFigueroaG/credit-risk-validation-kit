@@ -47,3 +47,50 @@ def test_negative_weight_is_critical(sample_frame: pl.DataFrame) -> None:
         check.name.endswith("weight_positive") and check.status == Status.CRITICAL
         for check in checks
     )
+
+
+def test_empty_dataset_is_critical() -> None:
+    frame = pl.DataFrame({"target": [], "pd": []}, schema={"target": pl.Int64, "pd": pl.Float64})
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd"),
+        ValidationOptions(min_events=1, min_non_events=1, min_rows=1),
+    )
+    assert any(check.name.endswith("empty") and check.status == Status.CRITICAL for check in checks)
+
+
+def test_constant_pd_warns(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(pl.lit(0.2).alias("pd"))
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd"),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("pd_constant") and check.status == Status.WARNING for check in checks
+    )
+
+
+def test_constant_score_warns(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(pl.lit(700.0).alias("score"))
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd", score="score"),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("score_constant") and check.status == Status.WARNING for check in checks
+    )
+
+
+def test_highly_imbalanced_target_warns() -> None:
+    frame = pl.DataFrame({"target": [1, *([0] * 199)], "pd": [0.4, *([0.1] * 199)]})
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd"),
+        ValidationOptions(min_events=1, min_non_events=1, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("target_imbalance") and check.status == Status.WARNING
+        for check in checks
+    )

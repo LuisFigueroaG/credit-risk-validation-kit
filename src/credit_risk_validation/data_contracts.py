@@ -69,6 +69,8 @@ def validate_contract(
             _check_pd(frame, columns.pd, validation, name),
         ]
     )
+    if columns.score and columns.score in available:
+        checks.append(_check_constant_numeric(frame, columns.score, name, "score"))
 
     if columns.weight and columns.weight in available:
         checks.append(_check_weight(frame, columns.weight, name))
@@ -83,6 +85,8 @@ def validate_contract(
 
 
 def _check_size(frame: pl.DataFrame, validation: ValidationOptions, name: str) -> CheckResult:
+    if frame.height == 0:
+        return CheckResult(f"{name}.empty", Status.CRITICAL, "Dataset is empty", frame.height)
     if frame.height < validation.min_rows:
         return CheckResult(
             f"{name}.min_rows",
@@ -124,6 +128,14 @@ def _check_target(
             "Insufficient events or non-events",
             {"events": events, "non_events": non_events},
         )
+    event_rate = events / frame.height if frame.height else 0.0
+    if event_rate < 0.01 or event_rate > 0.99:
+        return CheckResult(
+            f"{name}.target_imbalance",
+            Status.WARNING,
+            "Target is highly imbalanced",
+            {"events": events, "non_events": non_events, "event_rate": event_rate},
+        )
     return CheckResult(
         f"{name}.target_binary",
         Status.PASS,
@@ -163,7 +175,32 @@ def _check_pd(
             "PD must be in [0, 1]",
             {"min": min_pd, "max": max_pd},
         )
+    if series.n_unique() <= 1:
+        return CheckResult(
+            f"{name}.pd_constant",
+            Status.WARNING,
+            "PD is constant; discrimination and calibration evidence may be weak",
+            {"value": min_pd},
+        )
     return CheckResult(f"{name}.pd_range", Status.PASS, "PD is numeric and in valid range")
+
+
+def _check_constant_numeric(frame: pl.DataFrame, column: str, name: str, label: str) -> CheckResult:
+    series = frame.select(pl.col(column).cast(pl.Float64, strict=False)).to_series()
+    if series.null_count() > 0:
+        return CheckResult(
+            f"{name}.{label}_numeric",
+            Status.WARNING,
+            f"{label.title()} contains nulls or non-numeric values",
+        )
+    if series.n_unique() <= 1:
+        return CheckResult(
+            f"{name}.{label}_constant",
+            Status.WARNING,
+            f"{label.title()} is constant; discrimination evidence may be weak",
+            {"value": optional_float(series.min())},
+        )
+    return CheckResult(f"{name}.{label}_constant", Status.PASS, f"{label.title()} varies")
 
 
 def _check_weight(frame: pl.DataFrame, weight_col: str, name: str) -> CheckResult:
