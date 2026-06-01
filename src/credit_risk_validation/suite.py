@@ -90,6 +90,8 @@ class PDValidationSuite:
             tables["calibration_bins"] = pl.DataFrame()
             tables["stability_summary"] = pl.DataFrame()
             tables["psi_by_variable"] = pl.DataFrame()
+            tables["csi_by_variable"] = pl.DataFrame()
+            tables["segment_drift"] = pl.DataFrame()
             tables["segment_metrics"] = pl.DataFrame()
             tables["temporal_metrics"] = pl.DataFrame()
             return PDValidationResult(
@@ -130,13 +132,22 @@ class PDValidationSuite:
                 current,
                 pd_col=columns.pd,
                 score_col=columns.score,
+                target_col=columns.target,
+                segment_cols=columns.segments,
+                variable_cols=columns.segments,
+                positive_class=validation.positive_class,
                 n_bins=validation.n_bins,
                 psi_threshold=self.config.thresholds.psi,
             )
             metrics.update(stability_metrics)
             tables.update(stability_tables)
             tables["stability_summary"] = _metric_table(stability_metrics)
-            tables["psi_by_variable"] = _psi_variable_summary(stability_metrics)
+            if "psi_by_variable" not in stability_tables:
+                tables["psi_by_variable"] = _psi_variable_summary(stability_metrics)
+            if "csi_by_variable" not in stability_tables:
+                tables["csi_by_variable"] = pl.DataFrame()
+            if "segment_drift" not in stability_tables:
+                tables["segment_drift"] = pl.DataFrame()
             tables["current_segment_analysis"] = segment_analysis(
                 current, columns=columns, validation=validation
             )
@@ -151,6 +162,8 @@ class PDValidationSuite:
                 {"psi_pd": metrics["psi_pd"], "psi_score": metrics["psi_score"]}
             )
             tables["psi_by_variable"] = pl.DataFrame()
+            tables["csi_by_variable"] = pl.DataFrame()
+            tables["segment_drift"] = pl.DataFrame()
 
         tables["temporal_metrics"] = self._temporal_metrics(reference, current)
 
