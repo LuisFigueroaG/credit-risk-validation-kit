@@ -5,7 +5,7 @@ import polars as pl
 from scipy.special import logit
 from sklearn.metrics import brier_score_loss, log_loss
 
-from credit_risk_validation.config import ValidationOptions
+from credit_risk_validation.config import ThresholdConfig, ValidationOptions
 from credit_risk_validation.constants import EPSILON
 from credit_risk_validation.schemas import MetricResult
 from credit_risk_validation.status import Status
@@ -18,6 +18,7 @@ def calibration_metrics(
     *,
     n_bins: int,
     sample_weight: list[float] | None = None,
+    calibration_abs_error_threshold: ThresholdConfig | None = None,
 ) -> tuple[dict[str, MetricResult], pl.DataFrame]:
     """Calcula Brier, Log Loss, ECE, MCE, O/E y tabla de calibracion."""
 
@@ -37,7 +38,13 @@ def calibration_metrics(
     weight = (
         np.ones(len(target), dtype=float) if sample_weight is None else np.asarray(sample_weight)
     )
-    table = calibration_table(target, pd_values, weight=weight, n_bins=n_bins)
+    table = calibration_table(
+        target,
+        pd_values,
+        weight=weight,
+        n_bins=n_bins,
+        calibration_abs_error_threshold=calibration_abs_error_threshold,
+    )
     abs_error = np.abs(table["observed_rate"].to_numpy() - table["mean_pd"].to_numpy())
     bin_weight_share = table["weighted_count"].to_numpy() / float(np.sum(weight))
     ece = float(np.sum(abs_error * bin_weight_share))
@@ -70,28 +77,47 @@ def calibration_table(
     *,
     weight: np.ndarray,
     n_bins: int,
+    calibration_abs_error_threshold: ThresholdConfig | None = None,
 ) -> pl.DataFrame:
     """Genera tabla agregada de calibracion por bins de PD."""
 
     edges = quantile_edges(y_pred_pd.tolist(), n_bins)
     bins = assign_bins(y_pred_pd.tolist(), edges)
-    rows: list[dict[str, float | int]] = []
+    rows: list[dict[str, object]] = []
     for bin_id in sorted(set(bins.tolist())):
         mask = bins == bin_id
         bin_weight = float(np.sum(weight[mask]))
         events = float(np.sum(y_true[mask] * weight[mask]))
+        expected_defaults = float(np.sum(y_pred_pd[mask] * weight[mask]))
         mean_pd = float(np.average(y_pred_pd[mask], weights=weight[mask])) if bin_weight else 0.0
         observed_rate = events / bin_weight if bin_weight else 0.0
+        abs_error = abs(observed_rate - mean_pd)
+        rel_error = abs_error / mean_pd if mean_pd > 0 else None
+        lower_event_rate, upper_event_rate = _wilson_interval(events, bin_weight)
+        oe_ratio = events / expected_defaults if expected_defaults > 0 else None
+        status = _calibration_bin_status(abs_error, calibration_abs_error_threshold)
         rows.append(
             {
                 "bin": int(bin_id),
+                "n": int(np.sum(mask)),
                 "count": int(np.sum(mask)),
                 "weighted_count": bin_weight,
+                "lower_bound": float(np.min(y_pred_pd[mask])),
+                "upper_bound": float(np.max(y_pred_pd[mask])),
                 "events": events,
                 "non_events": bin_weight - events,
+                "observed_defaults": events,
+                "expected_defaults": expected_defaults,
+                "event_rate": observed_rate,
+                "avg_pd": mean_pd,
                 "mean_pd": mean_pd,
                 "observed_rate": observed_rate,
-                "abs_error": abs(observed_rate - mean_pd),
+                "abs_error": abs_error,
+                "rel_error": rel_error,
+                "oe_ratio": oe_ratio,
+                "lower_event_rate": lower_event_rate,
+                "upper_event_rate": upper_event_rate,
+                "status": status.value,
                 "min_pd": float(np.min(y_pred_pd[mask])),
                 "max_pd": float(np.max(y_pred_pd[mask])),
             }
@@ -106,6 +132,7 @@ def calibration_from_frame(
     pd_col: str,
     weight_col: str | None,
     validation: ValidationOptions,
+    calibration_abs_error_threshold: ThresholdConfig | None = None,
 ) -> tuple[dict[str, MetricResult], pl.DataFrame]:
     """Calcula calibracion desde un DataFrame."""
 
@@ -125,6 +152,31 @@ def calibration_from_frame(
         y_pred,
         n_bins=validation.n_bins,
         sample_weight=sample_weight,
+        calibration_abs_error_threshold=calibration_abs_error_threshold,
+    )
+
+
+def _calibration_bin_status(abs_error: float, threshold: ThresholdConfig | None) -> Status:
+    if threshold is None:
+        threshold = ThresholdConfig(warning=0.02, critical=0.05)
+    if threshold.critical is not None and abs_error >= threshold.critical:
+        return Status.CRITICAL
+    if threshold.warning is not None and abs_error >= threshold.warning:
+        return Status.WARNING
+    return Status.PASS
+
+
+def _wilson_interval(
+    events: float, total: float, z: float = 1.96
+) -> tuple[float | None, float | None]:
+    if total <= 0:
+        return None, None
+    rate = events / total
+    denominator = 1 + z**2 / total
+    centre = rate + z**2 / (2 * total)
+    margin = z * np.sqrt((rate * (1 - rate) + z**2 / (4 * total)) / total)
+    return max(0.0, float((centre - margin) / denominator)), min(
+        1.0, float((centre + margin) / denominator)
     )
 
 

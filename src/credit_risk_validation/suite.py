@@ -4,6 +4,7 @@ from typing import Any
 
 import polars as pl
 
+from credit_risk_validation._version import __version__
 from credit_risk_validation.config import (
     ColumnConfig,
     ModelMetadata,
@@ -21,6 +22,7 @@ from credit_risk_validation.results import PDValidationResult
 from credit_risk_validation.schemas import MetricResult
 from credit_risk_validation.status import Status
 from credit_risk_validation.utils.dataframe import FrameLike, optional_float, to_polars
+from credit_risk_validation.utils.hashing import dataframe_schema_sha256, stable_json_sha256
 
 
 class PDValidationSuite:
@@ -110,6 +112,7 @@ class PDValidationSuite:
             pd_col=columns.pd,
             weight_col=columns.weight,
             validation=validation,
+            calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
         )
         metrics.update(discrimination)
         metrics.update(calibration)
@@ -166,11 +169,16 @@ class PDValidationSuite:
             )
         return frame
 
-    @staticmethod
-    def _metadata(reference: pl.DataFrame, current: pl.DataFrame | None) -> dict[str, Any]:
+    def _metadata(self, reference: pl.DataFrame, current: pl.DataFrame | None) -> dict[str, Any]:
         return {
+            "library_version": __version__,
             "reference_rows": reference.height,
             "current_rows": current.height if current is not None else None,
+            "config_sha256": stable_json_sha256(self.config.to_public_dict()),
+            "reference_schema_sha256": dataframe_schema_sha256(reference),
+            "current_schema_sha256": dataframe_schema_sha256(current)
+            if current is not None
+            else None,
             "privacy": "Only aggregate validation outputs are exported.",
         }
 

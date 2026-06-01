@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 
 from credit_risk_validation._version import __version__
-from credit_risk_validation.config import PDValidationConfig
+from credit_risk_validation.config import PDValidationConfig, ReportConfig
 from credit_risk_validation.datasets.kaggle import download_kaggle_resource
 from credit_risk_validation.datasets.prepare_default_credit_card_clients import (
     prepare_default_credit_card_clients,
@@ -63,7 +64,12 @@ def pd_validate(
     configure_logging(verbose)
     validation_config = PDValidationConfig.from_yaml(config)
     if language:
-        validation_config.report.language = language
+        try:
+            validation_config.report = ReportConfig(
+                **{**validation_config.report.model_dump(), "language": language}
+            )
+        except ValidationError as exc:
+            raise typer.BadParameter("language must be one of: en, es") from exc
     suite = PDValidationSuite.from_config(validation_config)
     console.print(f"Loading reference: {reference}")
     reference_df = read_table(reference)

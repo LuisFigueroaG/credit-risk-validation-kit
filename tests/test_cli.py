@@ -39,3 +39,24 @@ def test_cli_version() -> None:
     result = CliRunner().invoke(app, ["version"])
     assert result.exit_code == 0
     assert "0.1.0" in result.output
+
+
+def test_cli_rejects_unsupported_language(
+    sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path
+) -> None:
+    reference = tmp_path / "reference.parquet"
+    sample_frame.write_parquet(reference)
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config_path),
+            "--reference",
+            str(reference),
+            "--language",
+            "fr",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "language must be one of" in result.output

@@ -19,9 +19,13 @@ def render_model_card(result: "PDValidationResult") -> str:
 ## Model Information
 
 - Version: {model.version}
+- Library version: {_metadata_value(result, "library_version")}
 - Horizon: {model.horizon}
 - Owner: {model.owner or "not specified"}
 - Purpose: {model.purpose or "not specified"}
+- Config SHA-256: {_metadata_value(result, "config_sha256")}
+- Reference schema SHA-256: {_metadata_value(result, "reference_schema_sha256")}
+- Current schema SHA-256: {_metadata_value(result, "current_schema_sha256")}
 
 ## Validation Status
 
@@ -42,3 +46,8 @@ This library supports validation evidence and documentation. It does not approve
 models, certify regulatory compliance, calculate regulatory capital, or calculate
 official provisions.
 """
+
+
+def _metadata_value(result: "PDValidationResult", key: str) -> str:
+    value = result.metadata.get(key)
+    return "not available" if value is None else str(value)
