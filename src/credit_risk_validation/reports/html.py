@@ -36,7 +36,31 @@ def render_html_report(result: "PDValidationResult") -> str:
     table_sections = "\n".join(
         _table_section(name, table.to_dicts()) for name, table in result.tables.items()
     )
-    chart_sections = _chart_sections(result)
+    chart_sections = (
+        _chart_sections(result)
+        if result.config.report.include_charts
+        else {"discrimination": "", "calibration": "", "stability": "", "segments": ""}
+    )
+    model_card_section = (
+        f"""
+    <section>
+      <h2>Model Card</h2>
+      <p>Purpose: {escape(str(model.purpose or "not specified"))}. Owner: {escape(str(model.owner or "not specified"))}.</p>
+    </section>"""
+        if result.config.report.include_model_card
+        else ""
+    )
+    methodology_section = (
+        """
+    <section>
+      <h2>Methodology Appendix</h2>
+      <p>AUC, Gini and KS summarize discrimination. Brier, Log Loss, calibration bins,
+      ECE and O/E summarize calibration. PSI summarizes distribution stability between
+      reference and current samples.</p>
+    </section>"""
+        if result.config.report.include_methodology
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="{escape(result.config.report.language)}">
 <head>
@@ -124,17 +148,9 @@ def render_html_report(result: "PDValidationResult") -> str:
       <h2>Champion vs Challenger</h2>
       <p>Side-by-side model comparison is experimental and never recommends automatic replacement.</p>
     </section>
-    <section>
-      <h2>Model Card</h2>
-      <p>Purpose: {escape(str(model.purpose or "not specified"))}. Owner: {escape(str(model.owner or "not specified"))}.</p>
-    </section>
+    {model_card_section}
     {table_sections}
-    <section>
-      <h2>Methodology Appendix</h2>
-      <p>AUC, Gini and KS summarize discrimination. Brier, Log Loss, calibration bins,
-      ECE and O/E summarize calibration. PSI summarizes distribution stability between
-      reference and current samples.</p>
-    </section>
+    {methodology_section}
     <section>
       <h2>Raw Outputs</h2>
       <p>JSON and CSV/Parquet outputs are written separately by the configured exporters. HTML includes aggregate output previews only.</p>
