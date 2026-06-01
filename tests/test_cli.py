@@ -1,8 +1,11 @@
 from pathlib import Path
 
 import polars as pl
+import pytest
+import typer
 from typer.testing import CliRunner
 
+import credit_risk_validation.cli as cli_module
 from credit_risk_validation.cli import app
 
 
@@ -60,3 +63,63 @@ def test_cli_rejects_unsupported_language(
     )
     assert result.exit_code != 0
     assert "language must be one of" in result.output
+
+
+def test_cli_datasets_download_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def fake_download(dataset: str, *, output_dir: Path, unzip: bool) -> Path:
+        calls.append(dataset)
+        return output_dir
+
+    monkeypatch.setattr(cli_module, "download_kaggle_resource", fake_download)
+    result = CliRunner().invoke(
+        app,
+        ["datasets", "download", "--all", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == cli_module.DATASET_KEYS
+
+
+def test_cli_datasets_prepare_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def fake_prepare(
+        dataset: str,
+        *,
+        raw_dir: Path,
+        output_dir: Path,
+        sample_size: int | None,
+        seed: int,
+    ) -> list[Path]:
+        calls.append(dataset)
+        return [output_dir / dataset / "reference.parquet"]
+
+    monkeypatch.setattr(cli_module, "_prepare_dataset", fake_prepare)
+    result = CliRunner().invoke(
+        app,
+        [
+            "datasets",
+            "prepare",
+            "--all",
+            "--raw-dir",
+            str(tmp_path / "raw"),
+            "--output-dir",
+            str(tmp_path / "processed"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == cli_module.DATASET_KEYS
+
+
+def test_cli_datasets_download_requires_dataset_or_all() -> None:
+    result = CliRunner().invoke(app, ["datasets", "download"])
+    assert result.exit_code != 0
+    assert "Usage:" in result.output
+
+
+def test_selected_dataset_keys_requires_dataset_or_all() -> None:
+    with pytest.raises(typer.BadParameter, match="Pass --dataset or --all"):
+        cli_module._selected_dataset_keys("", False, default=None)
