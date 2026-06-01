@@ -3,6 +3,9 @@
 from html import escape
 from typing import TYPE_CHECKING
 
+import plotly.graph_objects as go
+from plotly.io import to_html
+
 if TYPE_CHECKING:
     from credit_risk_validation.results import PDValidationResult
 
@@ -33,6 +36,7 @@ def render_html_report(result: "PDValidationResult") -> str:
     table_sections = "\n".join(
         _table_section(name, table.to_dicts()) for name, table in result.tables.items()
     )
+    chart_sections = _chart_sections(result)
     return f"""<!doctype html>
 <html lang="{escape(result.config.report.language)}">
 <head>
@@ -50,6 +54,7 @@ def render_html_report(result: "PDValidationResult") -> str:
     th {{ background: #f1f5f9; }}
     .status {{ font-weight: 700; }}
     .disclaimer {{ color: #475569; font-size: 13px; }}
+    .chart {{ margin-top: 16px; }}
     code {{ background: #f1f5f9; padding: 2px 4px; border-radius: 4px; }}
   </style>
 </head>
@@ -94,18 +99,22 @@ def render_html_report(result: "PDValidationResult") -> str:
     <section>
       <h2>Discrimination</h2>
       <p>AUC, Gini, KS, lift, bad-rate and capture-rate outputs are reported as aggregate metrics and tables.</p>
+      {chart_sections["discrimination"]}
     </section>
     <section>
       <h2>Calibration</h2>
       <p>Brier Score, Log Loss, ECE, MCE, O/E ratio and calibration bins are reported when calculable.</p>
+      {chart_sections["calibration"]}
     </section>
     <section>
       <h2>Stability</h2>
       <p>PSI for PD and score is reported when reference and current samples are provided.</p>
+      {chart_sections["stability"]}
     </section>
     <section>
       <h2>Segment Analysis</h2>
       <p>Configured segment metrics are reported only with sufficient events and non-events.</p>
+      {chart_sections["segments"]}
     </section>
     <section>
       <h2>Champion vs Challenger</h2>
@@ -130,6 +139,197 @@ def render_html_report(result: "PDValidationResult") -> str:
 </body>
 </html>
 """
+
+
+def _chart_sections(result: "PDValidationResult") -> dict[str, str]:
+    include_plotlyjs = True
+    sections: dict[str, str] = {
+        "discrimination": "",
+        "calibration": "",
+        "stability": "",
+        "segments": "",
+    }
+    charts = [
+        ("discrimination", _lift_chart(result)),
+        ("discrimination", _bad_rate_chart(result)),
+        ("calibration", _calibration_chart(result)),
+        ("stability", _psi_chart(result, "psi_pd", "PD PSI by Bin")),
+        ("stability", _psi_chart(result, "psi_score", "Score PSI by Bin")),
+        ("segments", _segment_chart(result)),
+    ]
+    for section, figure in charts:
+        if figure is None:
+            continue
+        sections[section] += _figure_html(figure, include_plotlyjs=include_plotlyjs)
+        include_plotlyjs = False
+    return sections
+
+
+def _lift_chart(result: "PDValidationResult") -> go.Figure | None:
+    table = result.tables.get("lift_table")
+    if table is None or table.is_empty():
+        return None
+    rows = table.to_dicts()
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=[row["bin"] for row in rows],
+            y=[row["cumulative_event_capture"] for row in rows],
+            mode="lines+markers",
+            name="Cumulative event capture",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[row["bin"] for row in rows],
+            y=[row["cumulative_population_share"] for row in rows],
+            mode="lines+markers",
+            name="Cumulative population share",
+        )
+    )
+    figure.update_layout(
+        title="Lift and Event Capture",
+        xaxis_title="Risk bin",
+        yaxis_title="Share",
+        yaxis_tickformat=".0%",
+        height=360,
+    )
+    return figure
+
+
+def _bad_rate_chart(result: "PDValidationResult") -> go.Figure | None:
+    table = result.tables.get("lift_table")
+    if table is None or table.is_empty():
+        return None
+    rows = table.to_dicts()
+    figure = go.Figure(
+        go.Bar(
+            x=[row["bin"] for row in rows],
+            y=[row["bad_rate"] for row in rows],
+            name="Bad rate",
+        )
+    )
+    figure.update_layout(
+        title="Bad Rate by Risk Bin",
+        xaxis_title="Risk bin",
+        yaxis_title="Bad rate",
+        yaxis_tickformat=".0%",
+        height=360,
+    )
+    return figure
+
+
+def _calibration_chart(result: "PDValidationResult") -> go.Figure | None:
+    table = result.tables.get("calibration_bins")
+    if table is None or table.is_empty():
+        return None
+    rows = table.to_dicts()
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=[row["mean_pd"] for row in rows],
+            y=[row["observed_rate"] for row in rows],
+            mode="markers+lines",
+            name="Observed default rate",
+        )
+    )
+    max_axis = max(
+        [float(row["mean_pd"] or 0) for row in rows]
+        + [float(row["observed_rate"] or 0) for row in rows]
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[0, max_axis],
+            y=[0, max_axis],
+            mode="lines",
+            name="Perfect calibration",
+            line={"dash": "dash"},
+        )
+    )
+    figure.update_layout(
+        title="Calibration: Average PD vs Observed Default Rate",
+        xaxis_title="Average predicted PD",
+        yaxis_title="Observed default rate",
+        xaxis_tickformat=".0%",
+        yaxis_tickformat=".0%",
+        height=380,
+    )
+    return figure
+
+
+def _psi_chart(result: "PDValidationResult", table_name: str, title: str) -> go.Figure | None:
+    table = result.tables.get(table_name)
+    if table is None or table.is_empty():
+        return None
+    rows = table.to_dicts()
+    figure = go.Figure()
+    figure.add_trace(
+        go.Bar(
+            x=[row["bin"] for row in rows],
+            y=[row["reference_share"] for row in rows],
+            name="Reference share",
+        )
+    )
+    figure.add_trace(
+        go.Bar(
+            x=[row["bin"] for row in rows],
+            y=[row["current_share"] for row in rows],
+            name="Current share",
+        )
+    )
+    figure.update_layout(
+        title=title,
+        xaxis_title="Bin",
+        yaxis_title="Population share",
+        yaxis_tickformat=".0%",
+        barmode="group",
+        height=360,
+    )
+    return figure
+
+
+def _segment_chart(result: "PDValidationResult") -> go.Figure | None:
+    table = result.tables.get("segment_metrics")
+    if table is None or table.is_empty() or "segment" not in table.columns:
+        return None
+    rows = table.to_dicts()
+    figure = go.Figure()
+    figure.add_trace(
+        go.Bar(
+            x=[str(row["segment"]) for row in rows],
+            y=[row.get("observed_rate") for row in rows],
+            name="Observed rate",
+        )
+    )
+    figure.add_trace(
+        go.Bar(
+            x=[str(row["segment"]) for row in rows],
+            y=[row.get("mean_pd") for row in rows],
+            name="Mean PD",
+        )
+    )
+    figure.update_layout(
+        title="Segment Calibration Summary",
+        xaxis_title="Segment",
+        yaxis_title="Rate",
+        yaxis_tickformat=".0%",
+        barmode="group",
+        height=380,
+    )
+    return figure
+
+
+def _figure_html(figure: go.Figure, *, include_plotlyjs: bool) -> str:
+    return (
+        '<div class="chart">'
+        + to_html(
+            figure,
+            include_plotlyjs=include_plotlyjs,
+            full_html=False,
+            config={"displayModeBar": False, "responsive": True},
+        )
+        + "</div>"
+    )
 
 
 def _table_section(name: str, rows: list[dict[str, object]]) -> str:
