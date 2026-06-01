@@ -114,12 +114,20 @@ class Thresholds(BaseModel):
 class ReportConfig(BaseModel):
     """Opciones de reporte."""
 
-    language: str = "es"
+    language: str = "en"
     title: str = "PD Model Validation Report"
     include_charts: bool = True
     include_model_card: bool = True
     include_methodology: bool = True
     anonymize: bool = True
+
+    @field_validator("language")
+    @classmethod
+    def _supported_language(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"en", "es"}:
+            raise ValueError("language must be one of: en, es")
+        return normalized
 
 
 class PDValidationConfig(BaseModel):
