@@ -2,6 +2,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+import typer
 from typer.testing import CliRunner
 
 import credit_risk_validation.cli as cli_module
@@ -116,4 +117,9 @@ def test_cli_datasets_prepare_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 def test_cli_datasets_download_requires_dataset_or_all() -> None:
     result = CliRunner().invoke(app, ["datasets", "download"])
     assert result.exit_code != 0
-    assert "Pass --dataset or --all" in result.output
+    assert "Usage:" in result.output
+
+
+def test_selected_dataset_keys_requires_dataset_or_all() -> None:
+    with pytest.raises(typer.BadParameter, match="Pass --dataset or --all"):
+        cli_module._selected_dataset_keys("", False, default=None)
