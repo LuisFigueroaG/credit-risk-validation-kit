@@ -13,11 +13,28 @@ def prepare_home_credit_stability(
 ) -> list[Path]:
     """Prepare a sample from Home Credit Stability if raw files are available."""
 
-    candidates = list(raw_dir.rglob("*train*.parquet")) + list(raw_dir.rglob("*train*.csv"))
+    candidates = (
+        list(raw_dir.rglob("train_base.parquet"))
+        + list(raw_dir.rglob("*train_base*.csv"))
+        + list(raw_dir.rglob("*train*.parquet"))
+        + list(raw_dir.rglob("*train*.csv"))
+    )
     if not candidates:
         raise FileNotFoundError("Could not find Home Credit Stability train file")
     source = candidates[0]
     frame = pl.read_parquet(source) if source.suffix == ".parquet" else pl.read_csv(source)
+    static_candidates = list(raw_dir.rglob("train_static_0_0.parquet")) + list(
+        raw_dir.rglob("*train_static*.csv")
+    )
+    if static_candidates and "case_id" in frame.columns:
+        static_source = static_candidates[0]
+        static = (
+            pl.read_parquet(static_source)
+            if static_source.suffix == ".parquet"
+            else pl.read_csv(static_source)
+        )
+        if "case_id" in static.columns:
+            frame = frame.join(static, on="case_id", how="left")
     if "target" not in frame.columns:
         lower_map = {column: column.lower() for column in frame.columns}
         frame = frame.rename(lower_map)

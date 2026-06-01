@@ -13,6 +13,14 @@ DATASET_ALIASES = {
     "home_credit_model_stability": ("competition", "home-credit-credit-risk-model-stability"),
 }
 
+DATASET_FALLBACKS = {
+    "give_me_some_credit": [("dataset", "brycecf/give-me-some-credit-dataset")],
+    "home_credit_stability": [("dataset", "asyoujie/home-credit-credit-risk-model-stability")],
+    "home_credit_model_stability": [
+        ("dataset", "asyoujie/home-credit-credit-risk-model-stability")
+    ],
+}
+
 
 class KaggleDownloadError(RuntimeError):
     """Raised when Kaggle CLI cannot download a resource."""
@@ -22,25 +30,42 @@ def download_kaggle_resource(dataset: str, *, output_dir: Path, unzip: bool = Tr
     """Download a Kaggle resource without embedding credentials."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    kind, slug = DATASET_ALIASES.get(dataset, _infer_resource(dataset))
+    resources = [DATASET_ALIASES.get(dataset, _infer_resource(dataset))]
+    resources.extend(DATASET_FALLBACKS.get(dataset, []))
+    errors: list[str] = []
+    for kind, slug in resources:
+        process = _run_download(kind, slug, output_dir=output_dir, unzip=unzip)
+        if process.returncode == 0:
+            if unzip and kind == "competition":
+                _extract_archives(output_dir)
+            return output_dir
+        errors.append(f"{kind}:{slug}: {(process.stderr or process.stdout).strip()}")
+    raise KaggleDownloadError(
+        "Kaggle download failed for all configured resources. If Kaggle requires manual "
+        "terms acceptance, accept terms in the Kaggle UI and retry. Details: " + " | ".join(errors)
+    )
+
+
+def _run_download(
+    kind: str,
+    slug: str,
+    *,
+    output_dir: Path,
+    unzip: bool,
+) -> subprocess.CompletedProcess[str]:
     if kind == "competition":
         command = [KAGGLE_CLI, "competitions", "download", "-c", slug, "-p", str(output_dir)]
     else:
         command = [KAGGLE_CLI, "datasets", "download", "-d", slug, "-p", str(output_dir)]
     if unzip and kind == "dataset":
         command.append("--unzip")
-    process = subprocess.run(command, capture_output=True, text=True, check=False)
-    if process.returncode != 0:
-        message = (process.stderr or process.stdout).strip()
-        raise KaggleDownloadError(
-            "Kaggle download failed. If Kaggle requires manual terms acceptance, accept terms "
-            f"in the Kaggle UI and retry. Detail: {message}"
-        )
-    if unzip and kind == "competition":
-        for archive in output_dir.glob("*.zip"):
-            with zipfile.ZipFile(archive) as zip_file:
-                zip_file.extractall(output_dir)
-    return output_dir
+    return subprocess.run(command, capture_output=True, text=True, check=False)
+
+
+def _extract_archives(output_dir: Path) -> None:
+    for archive in output_dir.glob("*.zip"):
+        with zipfile.ZipFile(archive) as zip_file:
+            zip_file.extractall(output_dir)
 
 
 def _infer_resource(dataset: str) -> tuple[str, str]:
