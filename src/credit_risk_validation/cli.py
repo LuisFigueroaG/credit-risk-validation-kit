@@ -103,7 +103,7 @@ def pd_validate(
 def datasets_download(
     dataset: Annotated[
         str | None, typer.Option("--dataset", help="Dataset key or Kaggle slug.")
-    ] = None,
+    ] = "",
     all_datasets: Annotated[
         bool, typer.Option("--all", help="Download all configured datasets.")
     ] = False,
@@ -120,7 +120,7 @@ def datasets_download(
 
 @datasets_app.command("prepare")
 def datasets_prepare(
-    dataset: Annotated[str | None, typer.Option("--dataset", help="Dataset key.")] = None,
+    dataset: Annotated[str | None, typer.Option("--dataset", help="Dataset key.")] = "",
     all_datasets: Annotated[
         bool, typer.Option("--all", help="Prepare all configured datasets.")
     ] = False,
@@ -166,7 +166,7 @@ def _selected_dataset_keys(
 ) -> list[str]:
     if all_datasets:
         return DATASET_KEYS
-    if dataset is None:
+    if not dataset:
         if default is None:
             raise typer.BadParameter("Pass --dataset or --all")
         dataset = default
