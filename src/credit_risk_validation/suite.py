@@ -20,7 +20,7 @@ from credit_risk_validation.metrics.segmentation import segment_analysis
 from credit_risk_validation.metrics.stability import stability_from_frames
 from credit_risk_validation.results import PDValidationResult
 from credit_risk_validation.schemas import MetricResult
-from credit_risk_validation.status import Status
+from credit_risk_validation.status import Status, worst_status
 from credit_risk_validation.utils.dataframe import FrameLike, optional_float, to_polars
 from credit_risk_validation.utils.hashing import dataframe_schema_sha256, stable_json_sha256
 
@@ -219,26 +219,88 @@ class PDValidationSuite:
         period_col = self.config.columns.period
         if not period_col or period_col not in reference.columns:
             return pl.DataFrame()
-        frames = [reference.with_columns(pl.lit("reference").alias("dataset"))]
+        frames = [("reference", reference)]
         if current is not None and period_col in current.columns:
-            frames.append(current.with_columns(pl.lit("current").alias("dataset")))
-        combined = pl.concat(frames)
+            frames.append(("current", current))
+        rows: list[dict[str, Any]] = []
+        for dataset_name, frame in frames:
+            period_values = sorted(frame[period_col].unique().to_list(), key=str)
+            for period_value in period_values:
+                period_frame = frame.filter(pl.col(period_col) == period_value)
+                rows.append(
+                    self._temporal_metrics_row(dataset_name, str(period_value), period_frame)
+                )
+        if not rows:
+            return pl.DataFrame()
+        return pl.DataFrame(rows).sort(["dataset", "period"])
+
+    def _temporal_metrics_row(
+        self, dataset_name: str, period_value: str, frame: pl.DataFrame
+    ) -> dict[str, Any]:
         target_col = self.config.columns.target
         pd_col = self.config.columns.pd
-        return (
-            combined.group_by(["dataset", period_col])
-            .agg(
-                pl.len().alias("rows"),
-                (pl.col(target_col) == self.config.validation.positive_class).sum().alias("events"),
-                pl.col(pd_col).mean().alias("mean_pd"),
-            )
-            .with_columns((pl.col("events") / pl.col("rows")).alias("bad_rate"))
-            .sort(["dataset", period_col])
+        score_col = (
+            self.config.columns.score
+            if self.config.columns.score and self.config.columns.score in frame.columns
+            else pd_col
         )
+        events = int((frame[target_col] == self.config.validation.positive_class).sum())
+        non_events = frame.height - events
+        discrimination, _ = discrimination_from_frame(
+            frame,
+            target_col=target_col,
+            score_col=score_col,
+            weight_col=self.config.columns.weight,
+            validation=self.config.validation,
+        )
+        calibration, _ = calibration_from_frame(
+            frame,
+            target_col=target_col,
+            pd_col=pd_col,
+            weight_col=self.config.columns.weight,
+            validation=self.config.validation,
+            calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+        )
+        metric_statuses = [
+            metric.status for metric in [*discrimination.values(), *calibration.values()]
+        ]
+        status = worst_status(metric_statuses) if metric_statuses else Status.NOT_APPLICABLE
+        return {
+            "dataset": dataset_name,
+            "period": period_value,
+            "rows": frame.height,
+            "events": events,
+            "non_events": non_events,
+            "bad_rate": events / frame.height if frame.height else None,
+            "mean_pd": optional_float(frame[pd_col].mean()),
+            "mean_score": optional_float(frame[score_col].mean())
+            if score_col in frame.columns
+            else None,
+            "auc": _metric_value(discrimination, "auc"),
+            "gini": _metric_value(discrimination, "gini"),
+            "ks": _metric_value(discrimination, "ks"),
+            "brier": _metric_value(calibration, "brier"),
+            "log_loss": _metric_value(calibration, "log_loss"),
+            "ece": _metric_value(calibration, "ece"),
+            "oe_ratio": _metric_value(calibration, "oe_ratio"),
+            "status": status.value,
+            "message": _temporal_message(status, events, non_events),
+        }
 
 
 def _metric_table(metrics: dict[str, MetricResult]) -> pl.DataFrame:
     return pl.DataFrame([metric.to_dict() for metric in metrics.values()])
+
+
+def _metric_value(metrics: dict[str, MetricResult], name: str) -> float | None:
+    metric = metrics.get(name)
+    return metric.value if metric is not None else None
+
+
+def _temporal_message(status: Status, events: int, non_events: int) -> str:
+    if status == Status.INSUFFICIENT_DATA:
+        return "Need at least one event and one non-event for temporal performance metrics"
+    return f"events={events}; non_events={non_events}"
 
 
 def _psi_variable_summary(metrics: dict[str, MetricResult]) -> pl.DataFrame:
