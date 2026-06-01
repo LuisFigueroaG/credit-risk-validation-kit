@@ -1,3 +1,5 @@
+from typing import cast
+
 import pytest
 
 from credit_risk_validation.metrics.calibration import calibration_metrics
@@ -18,3 +20,26 @@ def test_ece_manual() -> None:
 def test_oe_ratio() -> None:
     metrics, _ = calibration_metrics([0, 1, 0, 1], [0.5, 0.5, 0.5, 0.5], n_bins=2)
     assert metrics["oe_ratio"].value == pytest.approx(1.0)
+
+
+def test_calibration_table_contains_audit_fields() -> None:
+    _, table = calibration_metrics([0, 1, 0, 1], [0.2, 0.4, 0.6, 0.8], n_bins=2)
+
+    expected_columns = {
+        "expected_defaults",
+        "observed_defaults",
+        "event_rate",
+        "avg_pd",
+        "rel_error",
+        "oe_ratio",
+        "lower_event_rate",
+        "upper_event_rate",
+        "status",
+    }
+    assert expected_columns.issubset(set(table.columns))
+    assert table["expected_defaults"].sum() == pytest.approx(2.0)
+    assert table["observed_defaults"].sum() == pytest.approx(2.0)
+    lower_min = cast(float, table["lower_event_rate"].min())
+    upper_max = cast(float, table["upper_event_rate"].max())
+    assert lower_min >= 0
+    assert upper_max <= 1

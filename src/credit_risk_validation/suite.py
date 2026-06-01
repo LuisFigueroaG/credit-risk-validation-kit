@@ -110,6 +110,7 @@ class PDValidationSuite:
             pd_col=columns.pd,
             weight_col=columns.weight,
             validation=validation,
+            calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
         )
         metrics.update(discrimination)
         metrics.update(calibration)
