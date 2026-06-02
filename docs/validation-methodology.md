@@ -19,6 +19,11 @@ sample is the sample used to evaluate whether predicted PD levels match observed
 default rates. A calibration segment is a portfolio, product, geography, risk
 grade, or other group where calibration may differ from the global sample.
 
+Data contract checks validate required columns, binary targets, numeric PDs,
+weights, periods, duplicate id-period records, and minimum sample sizes. They
+also emit configurable warnings for high missing share, many PD values exactly
+at 0 or 1, high segment cardinality, and very small segments.
+
 ## Discrimination vs Calibration
 
 Discrimination evaluates ranking. A model with strong discrimination assigns

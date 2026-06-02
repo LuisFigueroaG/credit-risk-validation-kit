@@ -94,3 +94,62 @@ def test_highly_imbalanced_target_warns() -> None:
         check.name.endswith("target_imbalance") and check.status == Status.WARNING
         for check in checks
     )
+
+
+def test_many_pd_values_at_boundary_warns() -> None:
+    frame = pl.DataFrame(
+        {
+            "target": [0, 1] * 25,
+            "pd": [0.0, 1.0, *([0.2, 0.8] * 24)],
+        }
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd"),
+        ValidationOptions(
+            min_events=5,
+            min_non_events=5,
+            min_rows=20,
+            pd_boundary_warning_share=0.02,
+        ),
+    )
+    assert any(
+        check.name.endswith("pd_boundary_mass") and check.status == Status.WARNING
+        for check in checks
+    )
+
+
+def test_high_missing_share_warns(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(
+        pl.when(pl.arange(0, pl.len()) < 80)
+        .then(None)
+        .otherwise(pl.col("segment"))
+        .alias("segment")
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd", segments=["segment"]),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20, max_missing_share=0.20),
+    )
+    assert any(
+        check.name.endswith("missing_share.segment") and check.status == Status.WARNING
+        for check in checks
+    )
+
+
+def test_small_segment_warns(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(
+        pl.when(pl.arange(0, pl.len()) == 0)
+        .then(pl.lit("tiny"))
+        .otherwise(pl.lit("regular"))
+        .alias("segment")
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd", segments=["segment"]),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20, min_segment_size=5),
+    )
+    assert any(
+        check.name.endswith("segment_size.segment") and check.status == Status.WARNING
+        for check in checks
+    )
