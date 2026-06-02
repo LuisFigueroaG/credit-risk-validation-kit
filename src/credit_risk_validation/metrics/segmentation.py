@@ -81,7 +81,7 @@ def segment_analysis(
                 "count": segment_df.height,
                 "events": events,
                 "non_events": non_events,
-                "status": Status.PASS.value,
+                "status": Status.OK.value,
                 "auc": discrimination["auc"].value,
                 "gini": discrimination["gini"].value,
                 "ks": discrimination["ks"].value,

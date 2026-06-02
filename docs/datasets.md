@@ -19,7 +19,7 @@ Current environment notes:
   - `brycecf/give-me-some-credit-dataset`
   - `asyoujie/home-credit-credit-risk-model-stability`
 - The harness prepared and validated all three configured datasets with
-  `status=PASS` in sample mode.
+  `status=OK` in sample mode.
 
 For HTTP 403 competition downloads, enter the competition or accept its terms in
 the Kaggle UI, then rerun the harness. The helper also tries documented public

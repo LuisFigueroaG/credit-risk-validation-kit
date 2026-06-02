@@ -32,7 +32,7 @@ class MetricResult:
 
     name: str
     value: float | None
-    status: Status = Status.PASS
+    status: Status = Status.OK
     message: str = ""
     reference_value: float | None = None
     current_value: float | None = None

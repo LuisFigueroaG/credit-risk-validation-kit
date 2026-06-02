@@ -29,9 +29,9 @@ def auc_gini_ks(
     gini = 2 * auc - 1
     ks = _ks_statistic(y_true, risk_score, sample_weight)
     return {
-        "auc": _metric_result("auc", auc, Status.PASS, "", context),
-        "gini": _metric_result("gini", gini, Status.PASS, "", context),
-        "ks": _metric_result("ks", ks, Status.PASS, "", context),
+        "auc": _metric_result("auc", auc, Status.OK, "", context),
+        "gini": _metric_result("gini", gini, Status.OK, "", context),
+        "ks": _metric_result("ks", ks, Status.OK, "", context),
     }
 
 
