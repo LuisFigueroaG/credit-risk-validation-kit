@@ -27,8 +27,12 @@ Current environment notes:
 - Public Kaggle dataset mirrors downloaded successfully:
   - `brycecf/give-me-some-credit-dataset`
   - `asyoujie/home-credit-credit-risk-model-stability`
-- The harness prepared and validated all three configured datasets with
-  `status=OK` in sample mode.
+- The harness prepared and validated all three configured datasets in sample
+  mode. The latest local run with `--dataset all --sample-size 5000` completed
+  with `artifacts=ok; metrics=ok` for all three datasets:
+  - `give_me_some_credit`: `status=WARNING`
+  - `default_credit_card_clients`: `status=WARNING`
+  - `home_credit_stability`: `status=CRITICAL`
 - Prepared examples include simple aggregate segment columns: `age_band`,
   `sex_segment`, and `month_segment`. Home Credit also uses `date_decision` for
   temporal monitoring when available.
