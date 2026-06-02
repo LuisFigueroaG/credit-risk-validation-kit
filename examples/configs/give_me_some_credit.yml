@@ -12,7 +12,8 @@ columns:
   period: null
   weight: null
   id: null
-  segments: []
+  segments:
+    - "age_band"
 
 validation:
   positive_class: 1

@@ -42,7 +42,8 @@ validation:
     result = run_dataset_harness("give_me_some_credit", sample_size=None)
 
     assert result.endswith("artifacts=ok; metrics=ok")
-    assert (tmp_path / "reports" / "give_me_some_credit" / "pd_validation_report.html").exists()
-    assert (
-        tmp_path / "reports" / "give_me_some_credit" / "tables" / "psi_by_variable.csv"
-    ).exists()
+    reports_dir = tmp_path / "reports" / "give_me_some_credit"
+    assert (reports_dir / "pd_validation_report.html").exists()
+    assert (reports_dir / "pd_validation_model_card.md").exists()
+    assert (reports_dir / "tables" / "psi_by_variable.csv").exists()
+    assert (reports_dir / "tables" / "segment_metrics.csv").exists()

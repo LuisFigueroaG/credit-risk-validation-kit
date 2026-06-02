@@ -24,6 +24,10 @@ def prepare_default_credit_card_clients(
     frame = frame.rename(rename_map)
     if "target" not in frame.columns:
         raise ValueError("Could not identify target column")
+    if "SEX" in frame.columns:
+        frame = frame.with_columns(
+            pl.concat_str([pl.lit("sex_"), pl.col("SEX").cast(pl.Utf8)]).alias("sex_segment")
+        )
     if sample_size:
         frame = frame.head(sample_size)
     reference, current = add_baseline_pd(frame, target_col="target", seed=seed)

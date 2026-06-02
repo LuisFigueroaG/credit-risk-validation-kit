@@ -18,6 +18,15 @@ def prepare_give_me_some_credit(
         raise FileNotFoundError("Could not find Give Me Some Credit training CSV")
     frame = pl.read_csv(candidates[0]).rename({"SeriousDlqin2yrs": "target"})
     frame = frame.drop([column for column in ["", "Id"] if column in frame.columns])
+    if "age" in frame.columns:
+        frame = frame.with_columns(
+            pl.when(pl.col("age") < 35)
+            .then(pl.lit("under_35"))
+            .when(pl.col("age") < 55)
+            .then(pl.lit("35_54"))
+            .otherwise(pl.lit("55_plus"))
+            .alias("age_band")
+        )
     if sample_size:
         frame = frame.head(sample_size)
     reference, current = add_baseline_pd(frame, target_col="target", seed=seed)
