@@ -17,7 +17,7 @@ def test_segment_analysis_returns_rows(sample_frame: pl.DataFrame) -> None:
     ).run(reference_data=sample_frame)
     table = result.tables["segment_analysis"]
     assert table.height == 2
-    assert set(table["status"].to_list()) == {Status.PASS.value}
+    assert set(table["status"].to_list()) == {Status.OK.value}
 
 
 def test_small_segment_is_insufficient(sample_frame: pl.DataFrame) -> None:

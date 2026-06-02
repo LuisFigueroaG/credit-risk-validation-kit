@@ -88,32 +88,32 @@ def calibration_metrics(
         "brier": _metric_result(
             "brier",
             float(brier_score_loss(target, pd_values, sample_weight=weight)),
-            Status.PASS,
+            Status.OK,
             "",
             context,
         ),
         "log_loss": _metric_result(
             "log_loss",
             float(log_loss(target, pd_values, sample_weight=weight)),
-            Status.PASS,
+            Status.OK,
             "",
             context,
         ),
-        "ece": _metric_result("ece", ece, Status.PASS, "", context, threshold_context),
-        "mce": _metric_result("mce", mce, Status.PASS, "", context, threshold_context),
-        "oe_ratio": _metric_result("oe_ratio", oe_ratio, Status.PASS, "", context),
+        "ece": _metric_result("ece", ece, Status.OK, "", context, threshold_context),
+        "mce": _metric_result("mce", mce, Status.OK, "", context, threshold_context),
+        "oe_ratio": _metric_result("oe_ratio", oe_ratio, Status.OK, "", context),
         "calibration_in_the_large": _metric_result(
             "calibration_in_the_large",
             float(np.average(target - pd_values, weights=weight)),
-            Status.PASS,
+            Status.OK,
             "",
             context,
         ),
         "calibration_intercept": _metric_result(
-            "calibration_intercept", calibration_intercept, Status.PASS, "", context
+            "calibration_intercept", calibration_intercept, Status.OK, "", context
         ),
         "calibration_slope": _metric_result(
-            "calibration_slope", calibration_slope, Status.PASS, "", context
+            "calibration_slope", calibration_slope, Status.OK, "", context
         ),
     }, table
 
@@ -210,7 +210,7 @@ def _calibration_bin_status(abs_error: float, threshold: ThresholdConfig | None)
         return Status.CRITICAL
     if threshold.warning is not None and abs_error >= threshold.warning:
         return Status.WARNING
-    return Status.PASS
+    return Status.OK
 
 
 def _wilson_interval(

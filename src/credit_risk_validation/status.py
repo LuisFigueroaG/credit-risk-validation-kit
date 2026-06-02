@@ -6,7 +6,8 @@ from enum import StrEnum
 class Status(StrEnum):
     """Estado estandar para hallazgos y metricas."""
 
-    PASS = "PASS"
+    OK = "OK"
+    PASS = "OK"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
     INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
@@ -25,6 +26,6 @@ def worst_status(statuses: list[Status]) -> Status:
         Status.WARNING: 3,
         Status.INSUFFICIENT_DATA: 2,
         Status.NOT_APPLICABLE: 1,
-        Status.PASS: 0,
+        Status.OK: 0,
     }
     return max(statuses, key=lambda status: order[status])

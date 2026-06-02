@@ -79,8 +79,8 @@ aggregate evidence only.
 PD Model Validation Report
 Status: WARNING
 
-Data Quality      PASS
-Discrimination    PASS      AUC 0.79 | Gini 0.58 | KS 0.42
+Data Quality      OK
+Discrimination    OK      AUC 0.79 | Gini 0.58 | KS 0.42
 Calibration       WARNING   O/E 1.18 | ECE 0.031
 Stability         WARNING   PSI PD 0.14 | PSI score 0.08
 Segments          WARNING   2 segments require review

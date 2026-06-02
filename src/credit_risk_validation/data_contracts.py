@@ -39,7 +39,7 @@ def validate_contract(
             )
         )
         return checks
-    checks.append(CheckResult(f"{name}.required_columns", Status.PASS, "Required columns exist"))
+    checks.append(CheckResult(f"{name}.required_columns", Status.OK, "Required columns exist"))
 
     if missing_optional:
         checks.append(
@@ -52,7 +52,7 @@ def validate_contract(
         )
     else:
         checks.append(
-            CheckResult(f"{name}.optional_columns", Status.PASS, "Configured columns exist")
+            CheckResult(f"{name}.optional_columns", Status.OK, "Configured columns exist")
         )
 
     if len(frame.columns) != len(set(frame.columns)):
@@ -60,7 +60,7 @@ def validate_contract(
             CheckResult(f"{name}.duplicate_columns", Status.CRITICAL, "Duplicate columns found")
         )
     else:
-        checks.append(CheckResult(f"{name}.duplicate_columns", Status.PASS, "No duplicate columns"))
+        checks.append(CheckResult(f"{name}.duplicate_columns", Status.OK, "No duplicate columns"))
 
     checks.extend(
         [
@@ -94,7 +94,7 @@ def _check_size(frame: pl.DataFrame, validation: ValidationOptions, name: str) -
             f"Dataset has {frame.height} rows; configured minimum is {validation.min_rows}",
             frame.height,
         )
-    return CheckResult(f"{name}.min_rows", Status.PASS, "Dataset size is sufficient", frame.height)
+    return CheckResult(f"{name}.min_rows", Status.OK, "Dataset size is sufficient", frame.height)
 
 
 def _check_target(
@@ -138,7 +138,7 @@ def _check_target(
         )
     return CheckResult(
         f"{name}.target_binary",
-        Status.PASS,
+        Status.OK,
         "Target is binary with sufficient events and non-events",
         {"events": events, "non_events": non_events},
     )
@@ -182,7 +182,7 @@ def _check_pd(
             "PD is constant; discrimination and calibration evidence may be weak",
             {"value": min_pd},
         )
-    return CheckResult(f"{name}.pd_range", Status.PASS, "PD is numeric and in valid range")
+    return CheckResult(f"{name}.pd_range", Status.OK, "PD is numeric and in valid range")
 
 
 def _check_constant_numeric(frame: pl.DataFrame, column: str, name: str, label: str) -> CheckResult:
@@ -200,7 +200,7 @@ def _check_constant_numeric(frame: pl.DataFrame, column: str, name: str, label: 
             f"{label.title()} is constant; discrimination evidence may be weak",
             {"value": optional_float(series.min())},
         )
-    return CheckResult(f"{name}.{label}_constant", Status.PASS, f"{label.title()} varies")
+    return CheckResult(f"{name}.{label}_constant", Status.OK, f"{label.title()} varies")
 
 
 def _check_weight(frame: pl.DataFrame, weight_col: str, name: str) -> CheckResult:
@@ -211,7 +211,7 @@ def _check_weight(frame: pl.DataFrame, weight_col: str, name: str) -> CheckResul
         )
     if bool((series <= 0).any()):
         return CheckResult(f"{name}.weight_positive", Status.CRITICAL, "Weight must be positive")
-    return CheckResult(f"{name}.weight_positive", Status.PASS, "Weight is positive")
+    return CheckResult(f"{name}.weight_positive", Status.OK, "Weight is positive")
 
 
 def _check_period(frame: pl.DataFrame, period_col: str, name: str) -> CheckResult:
@@ -225,7 +225,7 @@ def _check_period(frame: pl.DataFrame, period_col: str, name: str) -> CheckResul
         )
     if parsed.null_count() == frame.height:
         return CheckResult(f"{name}.period_parseable", Status.WARNING, "Period is not date-like")
-    return CheckResult(f"{name}.period_parseable", Status.PASS, "Period is parseable")
+    return CheckResult(f"{name}.period_parseable", Status.OK, "Period is parseable")
 
 
 def _check_id_period_duplicates(
@@ -245,7 +245,7 @@ def _check_id_period_duplicates(
             "Duplicate id-period records found",
             int(duplicate_count),
         )
-    return CheckResult(f"{name}.id_period_duplicates", Status.PASS, "No id-period duplicates")
+    return CheckResult(f"{name}.id_period_duplicates", Status.OK, "No id-period duplicates")
 
 
 def _check_segment_cardinality(frame: pl.DataFrame, segment_col: str, name: str) -> CheckResult:
@@ -259,7 +259,7 @@ def _check_segment_cardinality(frame: pl.DataFrame, segment_col: str, name: str)
         )
     return CheckResult(
         f"{name}.segment_cardinality.{segment_col}",
-        Status.PASS,
+        Status.OK,
         "Segment cardinality is acceptable",
         int(cardinality),
     )

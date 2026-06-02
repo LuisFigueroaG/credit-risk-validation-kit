@@ -81,7 +81,7 @@ def psi_status(value: float, threshold: ThresholdConfig) -> Status:
         return Status.CRITICAL
     if threshold.warning is not None and value >= threshold.warning:
         return Status.WARNING
-    return Status.PASS
+    return Status.OK
 
 
 def stability_from_frames(
