@@ -2,6 +2,24 @@ name: Dataset Harness
 
 on:
   workflow_dispatch:
+    inputs:
+      dataset:
+        description: Dataset key to run, or all
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - give_me_some_credit
+          - default_credit_card_clients
+          - home_credit_stability
+      sample_size:
+        description: Maximum rows per reference/current split
+        required: true
+        default: "5000"
+
+permissions:
+  contents: read
 
 jobs:
   harness:
@@ -13,6 +31,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --all-extras --dev
-      - run: uv run python scripts/download_kaggle_datasets.py
-      - run: uv run python scripts/prepare_datasets.py
-      - run: uv run python scripts/run_all_dataset_harness.py
+      - name: Run dataset harness
+        run: >-
+          uv run python scripts/run_all_dataset_harness.py
+          --dataset "${{ inputs.dataset }}"
+          --sample-size "${{ inputs.sample_size }}"
+          --download
+          --prepare
