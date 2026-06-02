@@ -154,10 +154,6 @@ def render_html_report(result: "PDValidationResult") -> str:
       <p>{t(locale, "segment_analysis_body")}</p>
       {chart_sections["segments"]}
     </section>
-    <section>
-      <h2>{t(locale, "champion_title")}</h2>
-      <p>{t(locale, "champion_body")}</p>
-    </section>
     {model_card_section}
     {table_sections}
     {methodology_section}
