@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING
 
+from credit_risk_validation.reports.i18n import t, translations
+
 if TYPE_CHECKING:
     from credit_risk_validation.results import PDValidationResult
 
@@ -9,45 +11,44 @@ if TYPE_CHECKING:
 def render_model_card(result: "PDValidationResult") -> str:
     """Renderiza model card en Markdown."""
 
+    locale = translations(result.config.report.language)
     model = result.config.model
     metrics = "\n".join(
-        f"- {metric.name}: {metric.value if metric.value is not None else 'not available'} ({metric.status.value})"
+        f"- {metric.name}: {metric.value if metric.value is not None else t(locale, 'not_available')} ({metric.status.value})"
         for metric in result.metrics.values()
     )
-    return f"""# Model Card: {model.name}
+    return f"""# {t(locale, "model_card_title")}: {model.name}
 
-## Model Information
+## {t(locale, "model_information")}
 
-- Version: {model.version}
-- Library version: {_metadata_value(result, "library_version")}
-- Horizon: {model.horizon}
-- Owner: {model.owner or "not specified"}
-- Purpose: {model.purpose or "not specified"}
-- Config SHA-256: {_metadata_value(result, "config_sha256")}
-- Reference schema SHA-256: {_metadata_value(result, "reference_schema_sha256")}
-- Current schema SHA-256: {_metadata_value(result, "current_schema_sha256")}
+- {t(locale, "version")}: {model.version}
+- {t(locale, "library_version")}: {_metadata_value(result, "library_version", locale)}
+- {t(locale, "horizon")}: {model.horizon}
+- {t(locale, "owner")}: {model.owner or t(locale, "not_specified")}
+- {t(locale, "purpose")}: {model.purpose or t(locale, "not_specified")}
+- {t(locale, "config_hash")}: {_metadata_value(result, "config_sha256", locale)}
+- {t(locale, "reference_schema_hash")}: {_metadata_value(result, "reference_schema_sha256", locale)}
+- {t(locale, "current_schema_hash")}: {_metadata_value(result, "current_schema_sha256", locale)}
 
-## Validation Status
+## {t(locale, "validation_status")}
 
-- Overall status: {result.status.value}
-- Created at: {result.created_at}
+- {t(locale, "overall_status")}: {result.status.value}
+- {t(locale, "created_at")}: {result.created_at}
 
-## Metrics
+## {t(locale, "metrics")}
 
 {metrics}
 
-## Intended Use
+## {t(locale, "intended_use")}
 
-This model card documents quantitative validation evidence for a binary PD model.
+{t(locale, "intended_use_body")}
 
-## Limitations
+## {t(locale, "limitations")}
 
-This library supports validation evidence and documentation. It does not approve
-models, certify regulatory compliance, calculate regulatory capital, or calculate
-official provisions.
+{t(locale, "disclaimer")}
 """
 
 
-def _metadata_value(result: "PDValidationResult", key: str) -> str:
+def _metadata_value(result: "PDValidationResult", key: str, locale: dict[str, str]) -> str:
     value = result.metadata.get(key)
-    return "not available" if value is None else str(value)
+    return t(locale, "not_available") if value is None else str(value)

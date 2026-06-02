@@ -35,6 +35,28 @@ def test_result_exports(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
     assert "Config SHA-256" in model_card
 
 
+def test_model_card_supports_spanish_language(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
+    suite = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col="score",
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+        score_direction="lower_is_riskier",
+    )
+    suite.config.report.language = "es"
+    result = suite.run(reference_data=sample_frame, current_data=sample_frame)
+
+    result.to_model_card(tmp_path / "model_card.md")
+    model_card = (tmp_path / "model_card.md").read_text(encoding="utf-8")
+
+    assert "## Informacion del modelo" in model_card
+    assert "## Estado de validacion" in model_card
+    assert "## Uso previsto" in model_card
+    assert "No certifica cumplimiento regulatorio" in model_card
+
+
 def test_metric_results_include_audit_fields(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
     result = PDValidationSuite(
         target_col="target",

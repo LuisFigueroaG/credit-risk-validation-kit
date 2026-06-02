@@ -1,13 +1,12 @@
 """Self-contained HTML reporting."""
 
-from functools import lru_cache
 from html import escape
-from importlib import resources
 from typing import TYPE_CHECKING
 
 import plotly.graph_objects as go
-import yaml
 from plotly.io import to_html
+
+from credit_risk_validation.reports.i18n import t, translations
 
 if TYPE_CHECKING:
     from credit_risk_validation.results import PDValidationResult
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 def render_html_report(result: "PDValidationResult") -> str:
     """Renderiza un reporte HTML autocontenido con tablas agregadas."""
 
-    translations = _translations(result.config.report.language)
+    locale = translations(result.config.report.language)
     title = escape(result.config.report.title)
     model = result.config.model
     columns = result.config.columns
@@ -38,24 +37,23 @@ def render_html_report(result: "PDValidationResult") -> str:
         for check in result.checks
     )
     table_sections = "\n".join(
-        _table_section(name, table.to_dicts(), translations)
-        for name, table in result.tables.items()
+        _table_section(name, table.to_dicts(), locale) for name, table in result.tables.items()
     )
     chart_sections = (
-        _chart_sections(result, translations)
+        _chart_sections(result, locale)
         if result.config.report.include_charts
         else {"discrimination": "", "calibration": "", "stability": "", "segments": ""}
     )
     model_card_text = escape(
-        _t(translations, "model_card_body").format(
-            purpose=str(model.purpose or _t(translations, "not_specified")),
-            owner=str(model.owner or _t(translations, "not_specified")),
+        t(locale, "model_card_body").format(
+            purpose=str(model.purpose or t(locale, "not_specified")),
+            owner=str(model.owner or t(locale, "not_specified")),
         )
     )
     model_card_section = (
         f"""
     <section>
-      <h2>{_t(translations, "model_card")}</h2>
+      <h2>{t(locale, "model_card")}</h2>
       <p>{model_card_text}</p>
     </section>"""
         if result.config.report.include_model_card
@@ -64,8 +62,8 @@ def render_html_report(result: "PDValidationResult") -> str:
     methodology_section = (
         f"""
     <section>
-      <h2>{_t(translations, "methodology_title")}</h2>
-      <p>{_t(translations, "methodology_body")}</p>
+      <h2>{t(locale, "methodology_title")}</h2>
+      <p>{t(locale, "methodology_body")}</p>
     </section>"""
         if result.config.report.include_methodology
         else ""
@@ -94,73 +92,73 @@ def render_html_report(result: "PDValidationResult") -> str:
 <body>
   <header>
     <h1>{title}</h1>
-    <p>{_t(translations, "slogan")}</p>
-    <p class="status">{_t(translations, "overall_status")}: {escape(result.status.value)}</p>
+    <p>{t(locale, "slogan")}</p>
+    <p class="status">{t(locale, "overall_status")}: {escape(result.status.value)}</p>
   </header>
   <main>
     <section>
-      <h2>{_t(translations, "cover")}</h2>
+      <h2>{t(locale, "cover")}</h2>
       <table>
         <tbody>
-          <tr><th>{_t(translations, "model")}</th><td>{escape(model.name)}</td></tr>
-          <tr><th>{_t(translations, "model_version")}</th><td>{escape(model.version)}</td></tr>
-          <tr><th>{_t(translations, "library_version")}</th><td>{_metadata_value(result, "library_version", translations)}</td></tr>
-          <tr><th>{_t(translations, "generated_at")}</th><td>{escape(result.created_at)}</td></tr>
-          <tr><th>{_t(translations, "pd_horizon")}</th><td>{escape(model.horizon)}</td></tr>
-          <tr><th>{_t(translations, "target_column")}</th><td><code>{escape(columns.target)}</code></td></tr>
-          <tr><th>{_t(translations, "pd_column")}</th><td><code>{escape(columns.pd)}</code></td></tr>
-          <tr><th>{_t(translations, "score_column")}</th><td><code>{escape(str(columns.score))}</code></td></tr>
-          <tr><th>{_t(translations, "reference_rows")}</th><td>{_metadata_value(result, "reference_rows", translations)}</td></tr>
-          <tr><th>{_t(translations, "current_rows")}</th><td>{_metadata_value(result, "current_rows", translations)}</td></tr>
-          <tr><th>{_t(translations, "config_hash")}</th><td><code>{_metadata_value(result, "config_sha256", translations)}</code></td></tr>
-          <tr><th>{_t(translations, "reference_schema_hash")}</th><td><code>{_metadata_value(result, "reference_schema_sha256", translations)}</code></td></tr>
-          <tr><th>{_t(translations, "current_schema_hash")}</th><td><code>{_metadata_value(result, "current_schema_sha256", translations)}</code></td></tr>
+          <tr><th>{t(locale, "model")}</th><td>{escape(model.name)}</td></tr>
+          <tr><th>{t(locale, "model_version")}</th><td>{escape(model.version)}</td></tr>
+          <tr><th>{t(locale, "library_version")}</th><td>{_metadata_value(result, "library_version", locale)}</td></tr>
+          <tr><th>{t(locale, "generated_at")}</th><td>{escape(result.created_at)}</td></tr>
+          <tr><th>{t(locale, "pd_horizon")}</th><td>{escape(model.horizon)}</td></tr>
+          <tr><th>{t(locale, "target_column")}</th><td><code>{escape(columns.target)}</code></td></tr>
+          <tr><th>{t(locale, "pd_column")}</th><td><code>{escape(columns.pd)}</code></td></tr>
+          <tr><th>{t(locale, "score_column")}</th><td><code>{escape(str(columns.score))}</code></td></tr>
+          <tr><th>{t(locale, "reference_rows")}</th><td>{_metadata_value(result, "reference_rows", locale)}</td></tr>
+          <tr><th>{t(locale, "current_rows")}</th><td>{_metadata_value(result, "current_rows", locale)}</td></tr>
+          <tr><th>{t(locale, "config_hash")}</th><td><code>{_metadata_value(result, "config_sha256", locale)}</code></td></tr>
+          <tr><th>{t(locale, "reference_schema_hash")}</th><td><code>{_metadata_value(result, "reference_schema_sha256", locale)}</code></td></tr>
+          <tr><th>{t(locale, "current_schema_hash")}</th><td><code>{_metadata_value(result, "current_schema_sha256", locale)}</code></td></tr>
         </tbody>
       </table>
     </section>
     <section>
-      <h2>{_t(translations, "executive_summary")}</h2>
-      <p>{_t(translations, "executive_summary_body")}</p>
-      <p class="disclaimer">{_t(translations, "disclaimer")}</p>
+      <h2>{t(locale, "executive_summary")}</h2>
+      <p>{t(locale, "executive_summary_body")}</p>
+      <p class="disclaimer">{t(locale, "disclaimer")}</p>
     </section>
     <section>
-      <h2>{_t(translations, "data_quality")}</h2>
-      <table><thead><tr><th>{_t(translations, "check")}</th><th>{_t(translations, "status")}</th><th>{_t(translations, "message")}</th></tr></thead><tbody>{checks_rows}</tbody></table>
+      <h2>{t(locale, "data_quality")}</h2>
+      <table><thead><tr><th>{t(locale, "check")}</th><th>{t(locale, "status")}</th><th>{t(locale, "message")}</th></tr></thead><tbody>{checks_rows}</tbody></table>
     </section>
     <section>
-      <h2>{_t(translations, "metrics")}</h2>
-      <table><thead><tr><th>{_t(translations, "metric")}</th><th>{_t(translations, "value")}</th><th>{_t(translations, "status")}</th><th>{_t(translations, "message")}</th></tr></thead><tbody>{metrics_rows}</tbody></table>
+      <h2>{t(locale, "metrics")}</h2>
+      <table><thead><tr><th>{t(locale, "metric")}</th><th>{t(locale, "value")}</th><th>{t(locale, "status")}</th><th>{t(locale, "message")}</th></tr></thead><tbody>{metrics_rows}</tbody></table>
     </section>
     <section>
-      <h2>{_t(translations, "discrimination_title")}</h2>
-      <p>{_t(translations, "discrimination_body")}</p>
+      <h2>{t(locale, "discrimination_title")}</h2>
+      <p>{t(locale, "discrimination_body")}</p>
       {chart_sections["discrimination"]}
     </section>
     <section>
-      <h2>{_t(translations, "calibration_title")}</h2>
-      <p>{_t(translations, "calibration_body")}</p>
+      <h2>{t(locale, "calibration_title")}</h2>
+      <p>{t(locale, "calibration_body")}</p>
       {chart_sections["calibration"]}
     </section>
     <section>
-      <h2>{_t(translations, "stability_title")}</h2>
-      <p>{_t(translations, "stability_body")}</p>
+      <h2>{t(locale, "stability_title")}</h2>
+      <p>{t(locale, "stability_body")}</p>
       {chart_sections["stability"]}
     </section>
     <section>
-      <h2>{_t(translations, "segment_analysis_title")}</h2>
-      <p>{_t(translations, "segment_analysis_body")}</p>
+      <h2>{t(locale, "segment_analysis_title")}</h2>
+      <p>{t(locale, "segment_analysis_body")}</p>
       {chart_sections["segments"]}
     </section>
     <section>
-      <h2>{_t(translations, "champion_title")}</h2>
-      <p>{_t(translations, "champion_body")}</p>
+      <h2>{t(locale, "champion_title")}</h2>
+      <p>{t(locale, "champion_body")}</p>
     </section>
     {model_card_section}
     {table_sections}
     {methodology_section}
     <section>
-      <h2>{_t(translations, "raw_outputs")}</h2>
-      <p>{_t(translations, "raw_outputs_body")}</p>
+      <h2>{t(locale, "raw_outputs")}</h2>
+      <p>{t(locale, "raw_outputs_body")}</p>
     </section>
   </main>
 </body>
@@ -168,22 +166,7 @@ def render_html_report(result: "PDValidationResult") -> str:
 """
 
 
-@lru_cache
-def _translations(language: str) -> dict[str, str]:
-    locale_path = resources.files("credit_risk_validation").joinpath("locales", f"{language}.yml")
-    fallback_path = resources.files("credit_risk_validation").joinpath("locales", "en.yml")
-    fallback = yaml.safe_load(fallback_path.read_text(encoding="utf-8")) or {}
-    selected = (
-        yaml.safe_load(locale_path.read_text(encoding="utf-8")) if locale_path.is_file() else {}
-    ) or {}
-    return {**fallback, **selected}
-
-
-def _t(translations: dict[str, str], key: str) -> str:
-    return translations.get(key, key)
-
-
-def _chart_sections(result: "PDValidationResult", translations: dict[str, str]) -> dict[str, str]:
+def _chart_sections(result: "PDValidationResult", locale: dict[str, str]) -> dict[str, str]:
     include_plotlyjs = True
     sections: dict[str, str] = {
         "discrimination": "",
@@ -192,18 +175,18 @@ def _chart_sections(result: "PDValidationResult", translations: dict[str, str]) 
         "segments": "",
     }
     charts = [
-        ("discrimination", _lift_chart(result, translations)),
-        ("discrimination", _bad_rate_chart(result, translations)),
-        ("calibration", _calibration_chart(result, translations)),
+        ("discrimination", _lift_chart(result, locale)),
+        ("discrimination", _bad_rate_chart(result, locale)),
+        ("calibration", _calibration_chart(result, locale)),
         (
             "stability",
-            _psi_chart(result, "psi_pd", _t(translations, "pd_psi_by_bin"), translations),
+            _psi_chart(result, "psi_pd", t(locale, "pd_psi_by_bin"), locale),
         ),
         (
             "stability",
-            _psi_chart(result, "psi_score", _t(translations, "score_psi_by_bin"), translations),
+            _psi_chart(result, "psi_score", t(locale, "score_psi_by_bin"), locale),
         ),
-        ("segments", _segment_chart(result, translations)),
+        ("segments", _segment_chart(result, locale)),
     ]
     for section, figure in charts:
         if figure is None:
@@ -213,12 +196,12 @@ def _chart_sections(result: "PDValidationResult", translations: dict[str, str]) 
     return sections
 
 
-def _metadata_value(result: "PDValidationResult", key: str, translations: dict[str, str]) -> str:
+def _metadata_value(result: "PDValidationResult", key: str, locale: dict[str, str]) -> str:
     value = result.metadata.get(key)
-    return escape(_t(translations, "not_available") if value is None else str(value))
+    return escape(t(locale, "not_available") if value is None else str(value))
 
 
-def _lift_chart(result: "PDValidationResult", translations: dict[str, str]) -> go.Figure | None:
+def _lift_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figure | None:
     table = result.tables.get("lift_table")
     if table is None or table.is_empty():
         return None
@@ -241,16 +224,16 @@ def _lift_chart(result: "PDValidationResult", translations: dict[str, str]) -> g
         )
     )
     figure.update_layout(
-        title=_t(translations, "lift_capture_title"),
-        xaxis_title=_t(translations, "risk_bin"),
-        yaxis_title=_t(translations, "share"),
+        title=t(locale, "lift_capture_title"),
+        xaxis_title=t(locale, "risk_bin"),
+        yaxis_title=t(locale, "share"),
         yaxis_tickformat=".0%",
         height=360,
     )
     return figure
 
 
-def _bad_rate_chart(result: "PDValidationResult", translations: dict[str, str]) -> go.Figure | None:
+def _bad_rate_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figure | None:
     table = result.tables.get("lift_table")
     if table is None or table.is_empty():
         return None
@@ -263,8 +246,8 @@ def _bad_rate_chart(result: "PDValidationResult", translations: dict[str, str]) 
         )
     )
     figure.update_layout(
-        title=_t(translations, "bad_rate_by_risk_bin"),
-        xaxis_title=_t(translations, "risk_bin"),
+        title=t(locale, "bad_rate_by_risk_bin"),
+        xaxis_title=t(locale, "risk_bin"),
         yaxis_title="Bad rate",
         yaxis_tickformat=".0%",
         height=360,
@@ -272,9 +255,7 @@ def _bad_rate_chart(result: "PDValidationResult", translations: dict[str, str]) 
     return figure
 
 
-def _calibration_chart(
-    result: "PDValidationResult", translations: dict[str, str]
-) -> go.Figure | None:
+def _calibration_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figure | None:
     table = result.tables.get("calibration_bins")
     if table is None or table.is_empty():
         return None
@@ -302,9 +283,9 @@ def _calibration_chart(
         )
     )
     figure.update_layout(
-        title=_t(translations, "calibration_chart_title"),
-        xaxis_title=_t(translations, "calibration_x"),
-        yaxis_title=_t(translations, "calibration_y"),
+        title=t(locale, "calibration_chart_title"),
+        xaxis_title=t(locale, "calibration_x"),
+        yaxis_title=t(locale, "calibration_y"),
         xaxis_tickformat=".0%",
         yaxis_tickformat=".0%",
         height=380,
@@ -316,7 +297,7 @@ def _psi_chart(
     result: "PDValidationResult",
     table_name: str,
     title: str,
-    translations: dict[str, str],
+    locale: dict[str, str],
 ) -> go.Figure | None:
     table = result.tables.get(table_name)
     if table is None or table.is_empty():
@@ -340,7 +321,7 @@ def _psi_chart(
     figure.update_layout(
         title=title,
         xaxis_title="Bin",
-        yaxis_title=_t(translations, "population_share"),
+        yaxis_title=t(locale, "population_share"),
         yaxis_tickformat=".0%",
         barmode="group",
         height=360,
@@ -348,7 +329,7 @@ def _psi_chart(
     return figure
 
 
-def _segment_chart(result: "PDValidationResult", translations: dict[str, str]) -> go.Figure | None:
+def _segment_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figure | None:
     table = result.tables.get("segment_metrics")
     if table is None or table.is_empty() or "segment" not in table.columns:
         return None
@@ -369,8 +350,8 @@ def _segment_chart(result: "PDValidationResult", translations: dict[str, str]) -
         )
     )
     figure.update_layout(
-        title=_t(translations, "segment_calibration_summary"),
-        xaxis_title=_t(translations, "segment_x"),
+        title=t(locale, "segment_calibration_summary"),
+        xaxis_title=t(locale, "segment_x"),
         yaxis_title="Rate",
         yaxis_tickformat=".0%",
         barmode="group",
@@ -392,7 +373,7 @@ def _figure_html(figure: go.Figure, *, include_plotlyjs: bool) -> str:
     )
 
 
-def _table_section(name: str, rows: list[dict[str, object]], translations: dict[str, str]) -> str:
+def _table_section(name: str, rows: list[dict[str, object]], locale: dict[str, str]) -> str:
     if not rows:
         return ""
     headers = list(rows[0].keys())
@@ -403,7 +384,7 @@ def _table_section(name: str, rows: list[dict[str, object]], translations: dict[
         + "</tr>"
         for row in rows[:200]
     )
-    suffix = f"<p>{_t(translations, 'table_truncated')}</p>" if len(rows) > 200 else ""
+    suffix = f"<p>{t(locale, 'table_truncated')}</p>" if len(rows) > 200 else ""
     return (
         f"<section><h2>{escape(name.replace('_', ' ').title())}</h2>"
         f"<table><thead><tr>{header_html}</tr></thead><tbody>{body_html}</tbody></table>{suffix}</section>"
