@@ -68,15 +68,33 @@ regulatory capital, or calculate official provisions.
 
 ## References
 
-- Basel Committee on Banking Supervision, Working Paper 14 on validation of
-  low-default portfolios and credit risk model validation themes.
-- EBA GL 2017/16 on PD estimation, LGD estimation and treatment of defaulted
-  exposures.
-- Federal Reserve, OCC and FDIC guidance on model risk management.
-- Chile CMF banking regulation and accounting guidance, including credit risk
-  provisioning context.
-- scikit-learn documentation for probability calibration, Brier Score, Log Loss
-  and ROC AUC.
+- Basel Committee on Banking Supervision,
+  [Working Paper No. 14: Studies on the Validation of Internal Rating Systems](https://www.bis.org/publ/bcbs_wp14.htm).
+  This is useful background for empirical validation of rating systems, PD
+  discrimination, calibration, and benchmarking. CRVK does not implement IRB
+  approval workflows.
+- European Banking Authority,
+  [EBA/GL/2017/16: Guidelines on PD estimation, LGD estimation and treatment of defaulted exposures](https://www.eba.europa.eu/activities/single-rulebook/regulatory-activities/model-validation/guidelines-pd-estimation-lgd).
+  This is regulatory context for risk-parameter estimation and validation; CRVK
+  only supports binary PD output validation evidence.
+- Federal Reserve and OCC,
+  [SR 11-7 / Supervisory Guidance on Model Risk Management](https://www.federalreserve.gov/supervisionreg/srletters/sr1107.htm),
+  and FDIC
+  [FIL-22-2017 adoption guidance](https://www.fdic.gov/news/financial-institution-letters/2017/fil17022.html).
+  These sources motivate independent validation, governance, documentation, and
+  monitoring discipline.
+- Chile CMF,
+  [RAN Capitulo 21-6](https://www.cmfchile.cl/portal/principal/613/articles-38797_capitulo_216.pdf)
+  and
+  [Compendio de Normas Contables para Bancos, Capitulo B-1](https://cmfchile.cl/portal/principal/613/w3-propertyvalue-29911.html).
+  These are context for Chilean bank risk management and credit-risk provision
+  frameworks. CRVK does not calculate official provisions or certify CMF
+  compliance.
+- scikit-learn documentation for
+  [probability calibration](https://sklearn.org/stable/modules/calibration.html),
+  [Brier Score](https://sklearn.org/stable/modules/generated/sklearn.metrics.brier_score_loss.html),
+  [Log Loss](https://sklearn.org/stable/modules/generated/sklearn.metrics.log_loss.html),
+  and [ROC AUC](https://sklearn.org/stable/modules/generated/sklearn.metrics.roc_auc_score.html).
 - Siddiqi, *Credit Risk Scorecards*.
 - Baesens, Rösch and Scheule, *Credit Risk Analytics*.
 - Mays, *Handbook of Credit Scoring*.
