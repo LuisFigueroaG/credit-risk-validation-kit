@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 from credit_risk_validation import PDValidationSuite, __version__
+from credit_risk_validation.status import Status
 
 
 def test_result_exports(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
@@ -88,6 +90,45 @@ def test_metric_results_include_audit_fields(sample_frame: pl.DataFrame, tmp_pat
     discrimination_table = pl.read_csv(tmp_path / "tables" / "discrimination.csv")
     assert "sample_size" in discrimination_table.columns
     assert "event_count" in discrimination_table.columns
+
+
+def test_metric_results_populate_reference_current_and_delta(
+    sample_frame: pl.DataFrame,
+) -> None:
+    current = sample_frame.with_columns((1 - pl.col("pd")).alias("pd"))
+    result = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col=None,
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+    ).run(reference_data=sample_frame, current_data=current)
+
+    auc = result.metrics["auc"]
+    assert auc.value == auc.reference_value
+    assert auc.reference_value is not None
+    assert auc.current_value is not None
+    assert auc.current_value < auc.reference_value
+    assert auc.delta == pytest.approx(auc.current_value - auc.reference_value)
+    assert auc.threshold_warning == 0.03
+    assert auc.threshold_critical == 0.05
+    assert auc.status in {Status.WARNING, Status.CRITICAL}
+    assert "degraded" in auc.message
+
+    for name in ["gini", "ks"]:
+        metric = result.metrics[name]
+        assert metric.reference_value is not None
+        assert metric.current_value is not None
+        assert metric.delta == pytest.approx(metric.current_value - metric.reference_value)
+        assert metric.threshold_warning is not None
+        assert metric.threshold_critical is not None
+
+    brier = result.metrics["brier"]
+    assert brier.value == brier.reference_value
+    assert brier.reference_value is not None
+    assert brier.current_value is not None
+    assert brier.delta == pytest.approx(brier.current_value - brier.reference_value)
 
 
 def test_empty_optional_tables_are_exported_with_headers(
