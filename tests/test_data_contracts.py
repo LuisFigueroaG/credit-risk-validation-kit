@@ -49,6 +49,68 @@ def test_negative_weight_is_critical(sample_frame: pl.DataFrame) -> None:
     )
 
 
+def test_target_nan_is_critical(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(
+        pl.when(pl.arange(0, pl.len()) == 0)
+        .then(float("nan"))
+        .otherwise(pl.col("target").cast(pl.Float64))
+        .alias("target")
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd"),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("target_nan") and check.status == Status.CRITICAL for check in checks
+    )
+
+
+def test_pd_nan_is_critical(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(
+        pl.when(pl.arange(0, pl.len()) == 0).then(float("nan")).otherwise(pl.col("pd")).alias("pd")
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd"),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("pd_nan") and check.status == Status.CRITICAL for check in checks
+    )
+
+
+def test_weight_nan_is_critical(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(
+        pl.when(pl.arange(0, pl.len()) == 0).then(float("nan")).otherwise(1.0).alias("weight")
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd", weight="weight"),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("weight_nan") and check.status == Status.CRITICAL for check in checks
+    )
+
+
+def test_score_nan_warns(sample_frame: pl.DataFrame) -> None:
+    frame = sample_frame.with_columns(
+        pl.when(pl.arange(0, pl.len()) == 0)
+        .then(float("nan"))
+        .otherwise(pl.col("score"))
+        .alias("score")
+    )
+    checks = validate_contract(
+        frame,
+        ColumnConfig(target="target", pd="pd", score="score"),
+        ValidationOptions(min_events=5, min_non_events=5, min_rows=20),
+    )
+    assert any(
+        check.name.endswith("score_nan") and check.status == Status.WARNING for check in checks
+    )
+
+
 def test_empty_dataset_is_critical() -> None:
     frame = pl.DataFrame({"target": [], "pd": []}, schema={"target": pl.Int64, "pd": pl.Float64})
     checks = validate_contract(
