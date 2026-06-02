@@ -6,6 +6,15 @@ The harness supports:
 - Default of Credit Card Clients
 - Home Credit Stability sample mode
 
+Run the full local pipeline with:
+
+```bash
+uv run python scripts/run_all_dataset_harness.py --dataset all --sample-size 5000 --download --prepare
+```
+
+The same pipeline is available from the manual `Dataset Harness` GitHub Actions
+workflow with `dataset` and `sample_size` inputs.
+
 Raw Kaggle data is not committed. If Kaggle requires manual terms acceptance,
 accept terms in Kaggle and rerun the download command.
 
