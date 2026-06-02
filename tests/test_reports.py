@@ -45,6 +45,7 @@ def test_html_report_includes_embedded_charts(sample_frame: pl.DataFrame, tmp_pa
     assert "Current Value" in rendered
     assert "Delta" in rendered
     assert "Warning Threshold" in rendered
+    assert "Champion vs Challenger" not in rendered
 
 
 def test_html_report_respects_optional_report_sections(
