@@ -54,6 +54,7 @@ def test_calibration_table_contains_audit_fields() -> None:
         "lower_event_rate",
         "upper_event_rate",
         "status",
+        "message",
     }
     assert expected_columns.issubset(set(table.columns))
     assert table["expected_defaults"].sum() == pytest.approx(2.0)
@@ -62,3 +63,16 @@ def test_calibration_table_contains_audit_fields() -> None:
     upper_max = cast(float, table["upper_event_rate"].max())
     assert lower_min >= 0
     assert upper_max <= 1
+
+
+def test_calibration_bins_warn_when_missing_events_or_non_events() -> None:
+    _, table = calibration_metrics(
+        [0, 0, 1, 1],
+        [0.1, 0.2, 0.8, 0.9],
+        n_bins=2,
+    )
+
+    assert set(table["status"].to_list()) == {"WARNING"}
+    messages = set(table["message"].to_list())
+    assert "Calibration bin has no events" in messages
+    assert "Calibration bin has no non-events" in messages
