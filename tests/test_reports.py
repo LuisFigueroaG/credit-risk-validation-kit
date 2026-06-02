@@ -68,3 +68,29 @@ def test_html_report_respects_optional_report_sections(
     assert "Plotly.newPlot" not in rendered
     assert "Model Card" not in rendered
     assert "Methodology Appendix" not in rendered
+
+
+def test_html_report_supports_spanish_language(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
+    suite = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col="score",
+        segment_cols=["segment"],
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+        score_direction="lower_is_riskier",
+    )
+    suite.config.report.language = "es"
+    suite.config.report.title = "Reporte de validacion PD"
+    result = suite.run(reference_data=sample_frame, current_data=sample_frame)
+
+    report_path = tmp_path / "report.html"
+    result.to_html(report_path)
+    rendered = report_path.read_text(encoding="utf-8")
+
+    assert '<html lang="es">' in rendered
+    assert "Resumen ejecutivo" in rendered
+    assert "Calidad de datos" in rendered
+    assert "No certifica cumplimiento regulatorio" in rendered
+    assert "Lift y captura de eventos" in rendered
