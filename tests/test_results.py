@@ -33,3 +33,36 @@ def test_result_exports(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
     assert (tmp_path / "tables" / "lift_table.csv").exists()
     assert (tmp_path / "model_card.md").exists()
     assert "Config SHA-256" in model_card
+
+
+def test_metric_results_include_audit_fields(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
+    result = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col="score",
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+        score_direction="lower_is_riskier",
+    ).run(reference_data=sample_frame, current_data=sample_frame)
+    result.to_tables(tmp_path / "tables")
+
+    auc = result.to_dict()["metrics"]["auc"]
+    for field in [
+        "reference_value",
+        "current_value",
+        "delta",
+        "threshold_warning",
+        "threshold_critical",
+        "sample_size",
+        "event_count",
+        "non_event_count",
+    ]:
+        assert field in auc
+    assert auc["sample_size"] == sample_frame.height
+    assert auc["event_count"] == int(sample_frame["target"].sum())
+    assert auc["non_event_count"] == sample_frame.height - int(sample_frame["target"].sum())
+
+    discrimination_table = pl.read_csv(tmp_path / "tables" / "discrimination.csv")
+    assert "sample_size" in discrimination_table.columns
+    assert "event_count" in discrimination_table.columns
