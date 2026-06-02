@@ -15,7 +15,7 @@ def to_polars(data: FrameLike) -> pl.DataFrame:
     if isinstance(data, pl.DataFrame):
         return data.clone()
     if isinstance(data, pd.DataFrame):
-        return pl.from_pandas(data)
+        return pl.DataFrame(data.to_dict(orient="list"))
     raise TypeError("expected a polars.DataFrame or pandas.DataFrame")
 
 
