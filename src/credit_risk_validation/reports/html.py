@@ -22,7 +22,12 @@ def render_html_report(result: "PDValidationResult") -> str:
     metrics_rows = "\n".join(
         "<tr>"
         f"<td>{escape(metric.name)}</td>"
-        f"<td>{'' if metric.value is None else escape(f'{metric.value:.6g}')}</td>"
+        f"<td>{_format_metric_value(metric.value)}</td>"
+        f"<td>{_format_metric_value(metric.reference_value)}</td>"
+        f"<td>{_format_metric_value(metric.current_value)}</td>"
+        f"<td>{_format_metric_value(metric.delta)}</td>"
+        f"<td>{_format_metric_value(metric.threshold_warning)}</td>"
+        f"<td>{_format_metric_value(metric.threshold_critical)}</td>"
         f"<td>{escape(metric.status.value)}</td>"
         f"<td>{escape(metric.message)}</td>"
         "</tr>"
@@ -127,7 +132,7 @@ def render_html_report(result: "PDValidationResult") -> str:
     </section>
     <section>
       <h2>{t(locale, "metrics")}</h2>
-      <table><thead><tr><th>{t(locale, "metric")}</th><th>{t(locale, "value")}</th><th>{t(locale, "status")}</th><th>{t(locale, "message")}</th></tr></thead><tbody>{metrics_rows}</tbody></table>
+      <table><thead><tr><th>{t(locale, "metric")}</th><th>{t(locale, "value")}</th><th>{t(locale, "reference_value")}</th><th>{t(locale, "current_value")}</th><th>{t(locale, "delta")}</th><th>{t(locale, "threshold_warning")}</th><th>{t(locale, "threshold_critical")}</th><th>{t(locale, "status")}</th><th>{t(locale, "message")}</th></tr></thead><tbody>{metrics_rows}</tbody></table>
     </section>
     <section>
       <h2>{t(locale, "discrimination_title")}</h2>
@@ -199,6 +204,10 @@ def _chart_sections(result: "PDValidationResult", locale: dict[str, str]) -> dic
 def _metadata_value(result: "PDValidationResult", key: str, locale: dict[str, str]) -> str:
     value = result.metadata.get(key)
     return escape(t(locale, "not_available") if value is None else str(value))
+
+
+def _format_metric_value(value: float | None) -> str:
+    return "" if value is None else escape(f"{value:.6g}")
 
 
 def _lift_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figure | None:
