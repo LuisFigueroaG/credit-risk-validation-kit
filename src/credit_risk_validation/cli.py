@@ -9,6 +9,7 @@ from rich.console import Console
 
 from credit_risk_validation._version import __version__
 from credit_risk_validation.config import PDValidationConfig, ReportConfig
+from credit_risk_validation.datasets.baseline_model import run_dataset_harness
 from credit_risk_validation.datasets.kaggle import download_kaggle_resource
 from credit_risk_validation.datasets.prepare_default_credit_card_clients import (
     prepare_default_credit_card_clients,
@@ -148,14 +149,33 @@ def datasets_run_harness(
         bool, typer.Option("--all", help="Run all configured datasets.")
     ] = False,
     sample_size: Annotated[int | None, typer.Option("--sample-size")] = 5000,
+    download: Annotated[
+        bool, typer.Option("--download", help="Download selected Kaggle datasets first.")
+    ] = False,
+    prepare: Annotated[
+        bool, typer.Option("--prepare", help="Prepare selected datasets before validation.")
+    ] = False,
+    raw_dir: Annotated[Path, typer.Option("--raw-dir")] = Path("data/raw"),
+    output_dir: Annotated[Path, typer.Option("--output-dir")] = Path("data/processed"),
+    seed: Annotated[int, typer.Option("--seed")] = 42,
 ) -> None:
-    """Run dataset validation harness if processed files are available."""
-
-    from credit_risk_validation.datasets.baseline_model import run_dataset_harness
+    """Run the dataset validation harness, optionally downloading and preparing inputs first."""
 
     selected = _selected_dataset_keys(dataset, all_datasets, default="give_me_some_credit")
     for key in selected:
-        result = run_dataset_harness(key, sample_size=sample_size)
+        if download:
+            download_kaggle_resource(key, output_dir=raw_dir / key, unzip=True)
+            console.print("Downloaded configured dataset")
+        if prepare:
+            for path in _prepare_dataset(
+                key,
+                raw_dir=raw_dir,
+                output_dir=output_dir,
+                sample_size=sample_size,
+                seed=seed,
+            ):
+                console.print(f"Prepared: {path}")
+        result = run_dataset_harness(key, sample_size=sample_size, processed_dir=output_dir)
         console.print(f"{key}: {result}")
 
 

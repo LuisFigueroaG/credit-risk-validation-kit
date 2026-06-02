@@ -114,6 +114,61 @@ def test_cli_datasets_prepare_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert calls == cli_module.DATASET_KEYS
 
 
+def test_cli_datasets_run_harness_can_download_and_prepare(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[str, str, str | None]] = []
+
+    def fake_download(dataset: str, *, output_dir: Path, unzip: bool) -> Path:
+        calls.append(("download", dataset, str(output_dir)))
+        return output_dir
+
+    def fake_prepare(
+        dataset: str,
+        *,
+        raw_dir: Path,
+        output_dir: Path,
+        sample_size: int | None,
+        seed: int,
+    ) -> list[Path]:
+        calls.append(("prepare", dataset, str(output_dir)))
+        return [output_dir / dataset / "reference.parquet"]
+
+    def fake_run_harness(dataset: str, *, sample_size: int | None, processed_dir: Path) -> str:
+        calls.append(("run", dataset, str(processed_dir)))
+        return "status=OK; artifacts=ok; metrics=ok"
+
+    monkeypatch.setattr(cli_module, "download_kaggle_resource", fake_download)
+    monkeypatch.setattr(cli_module, "_prepare_dataset", fake_prepare)
+    monkeypatch.setattr(cli_module, "run_dataset_harness", fake_run_harness)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "datasets",
+            "run-harness",
+            "--dataset",
+            "give_me_some_credit",
+            "--download",
+            "--prepare",
+            "--raw-dir",
+            str(tmp_path / "raw"),
+            "--output-dir",
+            str(tmp_path / "processed"),
+            "--sample-size",
+            "123",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        ("download", "give_me_some_credit", str(tmp_path / "raw" / "give_me_some_credit")),
+        ("prepare", "give_me_some_credit", str(tmp_path / "processed")),
+        ("run", "give_me_some_credit", str(tmp_path / "processed")),
+    ]
+    assert "status=OK; artifacts=ok; metrics=ok" in result.output
+
+
 def test_cli_datasets_download_requires_dataset_or_all() -> None:
     result = CliRunner().invoke(app, ["datasets", "download"])
     assert result.exit_code != 0
