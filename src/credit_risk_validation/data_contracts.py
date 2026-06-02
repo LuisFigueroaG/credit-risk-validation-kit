@@ -105,6 +105,8 @@ def _check_target(
     target = frame[target_col]
     if target.null_count() > 0:
         return CheckResult(f"{name}.target_nulls", Status.CRITICAL, "Target contains nulls")
+    if _nan_count(target) > 0:
+        return CheckResult(f"{name}.target_nan", Status.CRITICAL, "Target contains NaN values")
     unique = set(target.unique().to_list())
     expected = {0, validation.positive_class}
     if not unique.issubset(expected):
@@ -156,6 +158,8 @@ def _check_pd(
                 f"{name}.pd_numeric", Status.CRITICAL, "PD contains nulls or non-numeric values"
             )
         ]
+    if _nan_count(series) > 0:
+        return [CheckResult(f"{name}.pd_nan", Status.CRITICAL, "PD contains NaN values")]
     if series.is_infinite().sum() > 0:
         return [CheckResult(f"{name}.pd_infinite", Status.CRITICAL, "PD contains infinite values")]
     min_pd = optional_float(series.min())
@@ -224,6 +228,18 @@ def _check_constant_numeric(frame: pl.DataFrame, column: str, name: str, label: 
             Status.WARNING,
             f"{label.title()} contains nulls or non-numeric values",
         )
+    if _nan_count(series) > 0:
+        return CheckResult(
+            f"{name}.{label}_nan",
+            Status.WARNING,
+            f"{label.title()} contains NaN values",
+        )
+    if bool(series.is_infinite().any()):
+        return CheckResult(
+            f"{name}.{label}_infinite",
+            Status.WARNING,
+            f"{label.title()} contains infinite values",
+        )
     if series.n_unique() <= 1:
         return CheckResult(
             f"{name}.{label}_constant",
@@ -239,6 +255,12 @@ def _check_weight(frame: pl.DataFrame, weight_col: str, name: str) -> CheckResul
     if series.null_count() > 0:
         return CheckResult(
             f"{name}.weight_numeric", Status.CRITICAL, "Weight contains nulls or non-numeric values"
+        )
+    if _nan_count(series) > 0:
+        return CheckResult(f"{name}.weight_nan", Status.CRITICAL, "Weight contains NaN values")
+    if bool(series.is_infinite().any()):
+        return CheckResult(
+            f"{name}.weight_infinite", Status.CRITICAL, "Weight contains infinite values"
         )
     if bool((series <= 0).any()):
         return CheckResult(f"{name}.weight_positive", Status.CRITICAL, "Weight must be positive")
@@ -357,3 +379,10 @@ def _check_segment_size(
         "Segment sizes are acceptable",
         {"minimum": validation.min_segment_size},
     )
+
+
+def _nan_count(series: pl.Series) -> int:
+    try:
+        return int(series.is_nan().sum())
+    except Exception:  # pragma: no cover - non-floating dtypes do not expose NaN checks uniformly
+        return 0
