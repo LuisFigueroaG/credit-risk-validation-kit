@@ -142,7 +142,13 @@ def calibration_table(
         rel_error = abs_error / mean_pd if mean_pd > 0 else None
         lower_event_rate, upper_event_rate = _wilson_interval(events, bin_weight)
         oe_ratio = events / expected_defaults if expected_defaults > 0 else None
-        status = _calibration_bin_status(abs_error, calibration_abs_error_threshold)
+        non_events = bin_weight - events
+        status, message = _calibration_bin_status(
+            events,
+            non_events,
+            abs_error,
+            calibration_abs_error_threshold,
+        )
         rows.append(
             {
                 "bin": int(bin_id),
@@ -152,7 +158,7 @@ def calibration_table(
                 "lower_bound": float(np.min(y_pred_pd[mask])),
                 "upper_bound": float(np.max(y_pred_pd[mask])),
                 "events": events,
-                "non_events": bin_weight - events,
+                "non_events": non_events,
                 "observed_defaults": events,
                 "expected_defaults": expected_defaults,
                 "event_rate": observed_rate,
@@ -165,6 +171,7 @@ def calibration_table(
                 "lower_event_rate": lower_event_rate,
                 "upper_event_rate": upper_event_rate,
                 "status": status.value,
+                "message": message,
                 "min_pd": float(np.min(y_pred_pd[mask])),
                 "max_pd": float(np.max(y_pred_pd[mask])),
             }
@@ -203,14 +210,23 @@ def calibration_from_frame(
     )
 
 
-def _calibration_bin_status(abs_error: float, threshold: ThresholdConfig | None) -> Status:
+def _calibration_bin_status(
+    events: float,
+    non_events: float,
+    abs_error: float,
+    threshold: ThresholdConfig | None,
+) -> tuple[Status, str]:
+    if events <= 0:
+        return Status.WARNING, "Calibration bin has no events"
+    if non_events <= 0:
+        return Status.WARNING, "Calibration bin has no non-events"
     if threshold is None:
         threshold = ThresholdConfig(warning=0.02, critical=0.05)
     if threshold.critical is not None and abs_error >= threshold.critical:
-        return Status.CRITICAL
+        return Status.CRITICAL, "Calibration absolute error is above critical threshold"
     if threshold.warning is not None and abs_error >= threshold.warning:
-        return Status.WARNING
-    return Status.OK
+        return Status.WARNING, "Calibration absolute error is above warning threshold"
+    return Status.OK, ""
 
 
 def _wilson_interval(
