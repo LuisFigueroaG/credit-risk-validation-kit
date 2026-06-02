@@ -1,4 +1,5 @@
 import polars as pl
+import pytest
 
 from credit_risk_validation.config import ColumnConfig, ValidationOptions
 from credit_risk_validation.data_contracts import validate_contract
@@ -119,6 +120,11 @@ def test_period_must_be_parseable(sample_frame: pl.DataFrame) -> None:
         check.name.endswith("period_parseable") and check.status == Status.WARNING
         for check in checks
     )
+
+
+def test_polars_rejects_duplicate_columns_before_contract() -> None:
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.DataFrame([[0, 0.1]], schema=["target", "target"], orient="row")
 
 
 def test_target_nan_is_critical(sample_frame: pl.DataFrame) -> None:
