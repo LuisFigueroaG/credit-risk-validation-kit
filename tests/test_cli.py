@@ -139,6 +139,72 @@ def test_cli_rejects_unsupported_language(
     assert "language must be one of" in result.output
 
 
+def test_cli_invalid_config_fails(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
+    reference = tmp_path / "reference.parquet"
+    config = tmp_path / "invalid.yml"
+    sample_frame.write_parquet(reference)
+    config.write_text(
+        """
+validation:
+  n_bins: 1
+""",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config),
+            "--reference",
+            str(reference),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "n_bins must be at least 2" in str(result.exception)
+
+
+def test_cli_missing_reference_file_fails(config_path: Path, tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config_path),
+            "--reference",
+            str(tmp_path / "missing.parquet"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert result.exception is not None
+
+
+def test_cli_fail_on_critical_returns_nonzero(
+    sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path
+) -> None:
+    reference = tmp_path / "reference.parquet"
+    critical_frame = sample_frame.with_columns(pl.lit(2).alias("target"))
+    critical_frame.write_parquet(reference)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config_path),
+            "--reference",
+            str(reference),
+            "--fail-on-critical",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Status: CRITICAL" in result.output
+
+
 def test_cli_datasets_download_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: list[str] = []
 
