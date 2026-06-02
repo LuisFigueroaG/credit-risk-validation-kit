@@ -41,6 +41,10 @@ def test_html_report_includes_embedded_charts(sample_frame: pl.DataFrame, tmp_pa
     assert "Lift and Event Capture" in rendered
     assert "PD PSI by Bin" in rendered
     assert "Segment Calibration Summary" in rendered
+    assert "Reference Value" in rendered
+    assert "Current Value" in rendered
+    assert "Delta" in rendered
+    assert "Warning Threshold" in rendered
 
 
 def test_html_report_respects_optional_report_sections(
@@ -94,3 +98,6 @@ def test_html_report_supports_spanish_language(sample_frame: pl.DataFrame, tmp_p
     assert "Calidad de datos" in rendered
     assert "No certifica cumplimiento regulatorio" in rendered
     assert "Lift y captura de eventos" in rendered
+    assert "Valor reference" in rendered
+    assert "Valor current" in rendered
+    assert "Umbral warning" in rendered
