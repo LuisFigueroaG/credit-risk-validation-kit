@@ -54,6 +54,7 @@ def validate_contract(
         checks.append(
             CheckResult(f"{name}.optional_columns", Status.OK, "Configured columns exist")
         )
+    checks.extend(_check_missing_share(frame, optional, validation, name))
 
     if len(frame.columns) != len(set(frame.columns)):
         checks.append(
@@ -66,7 +67,7 @@ def validate_contract(
         [
             _check_size(frame, validation, name),
             _check_target(frame, columns.target, validation, name),
-            _check_pd(frame, columns.pd, validation, name),
+            *_check_pd(frame, columns.pd, validation, name),
         ]
     )
     if columns.score and columns.score in available:
@@ -81,6 +82,7 @@ def validate_contract(
     for segment in columns.segments:
         if segment in available:
             checks.append(_check_segment_cardinality(frame, segment, name))
+            checks.append(_check_segment_size(frame, segment, validation, name))
     return checks
 
 
@@ -146,43 +148,72 @@ def _check_target(
 
 def _check_pd(
     frame: pl.DataFrame, pd_col: str, validation: ValidationOptions, name: str
-) -> CheckResult:
+) -> list[CheckResult]:
     series = frame.select(pl.col(pd_col).cast(pl.Float64, strict=False)).to_series()
     if series.null_count() > 0:
-        return CheckResult(
-            f"{name}.pd_numeric", Status.CRITICAL, "PD contains nulls or non-numeric values"
-        )
+        return [
+            CheckResult(
+                f"{name}.pd_numeric", Status.CRITICAL, "PD contains nulls or non-numeric values"
+            )
+        ]
     if series.is_infinite().sum() > 0:
-        return CheckResult(f"{name}.pd_infinite", Status.CRITICAL, "PD contains infinite values")
+        return [CheckResult(f"{name}.pd_infinite", Status.CRITICAL, "PD contains infinite values")]
     min_pd = optional_float(series.min())
     max_pd = optional_float(series.max())
     if min_pd is None or max_pd is None:
-        return CheckResult(
-            f"{name}.pd_numeric", Status.CRITICAL, "PD min/max could not be computed"
-        )
+        return [
+            CheckResult(f"{name}.pd_numeric", Status.CRITICAL, "PD min/max could not be computed")
+        ]
+    checks: list[CheckResult] = []
     if validation.clip_pd.enabled:
         if min_pd < 0 or max_pd > 1:
-            return CheckResult(
-                f"{name}.pd_range",
-                Status.WARNING,
-                "PD outside [0, 1]; values will be clipped because clip_pd is enabled",
-                {"min": min_pd, "max": max_pd},
+            checks.append(
+                CheckResult(
+                    f"{name}.pd_range",
+                    Status.WARNING,
+                    "PD outside [0, 1]; values will be clipped because clip_pd is enabled",
+                    {"min": min_pd, "max": max_pd},
+                )
+            )
+        else:
+            checks.append(
+                CheckResult(f"{name}.pd_range", Status.OK, "PD is numeric and in valid range")
             )
     elif min_pd < 0 or max_pd > 1:
-        return CheckResult(
-            f"{name}.pd_range",
-            Status.CRITICAL,
-            "PD must be in [0, 1]",
-            {"min": min_pd, "max": max_pd},
+        return [
+            CheckResult(
+                f"{name}.pd_range",
+                Status.CRITICAL,
+                "PD must be in [0, 1]",
+                {"min": min_pd, "max": max_pd},
+            )
+        ]
+    else:
+        checks.append(
+            CheckResult(f"{name}.pd_range", Status.OK, "PD is numeric and in valid range")
+        )
+
+    boundary_count = int(((series == 0) | (series == 1)).sum())
+    boundary_share = boundary_count / frame.height if frame.height else 0.0
+    if boundary_count and boundary_share >= validation.pd_boundary_warning_share:
+        checks.append(
+            CheckResult(
+                f"{name}.pd_boundary_mass",
+                Status.WARNING,
+                "Many PD values are exactly 0 or 1; calibration evidence may be unstable",
+                {"count": boundary_count, "share": boundary_share},
+            )
         )
     if series.n_unique() <= 1:
-        return CheckResult(
-            f"{name}.pd_constant",
-            Status.WARNING,
-            "PD is constant; discrimination and calibration evidence may be weak",
-            {"value": min_pd},
+        checks.append(
+            CheckResult(
+                f"{name}.pd_constant",
+                Status.WARNING,
+                "PD is constant; discrimination and calibration evidence may be weak",
+                {"value": min_pd},
+            )
         )
-    return CheckResult(f"{name}.pd_range", Status.OK, "PD is numeric and in valid range")
+    return checks
 
 
 def _check_constant_numeric(frame: pl.DataFrame, column: str, name: str, label: str) -> CheckResult:
@@ -262,4 +293,67 @@ def _check_segment_cardinality(frame: pl.DataFrame, segment_col: str, name: str)
         Status.OK,
         "Segment cardinality is acceptable",
         int(cardinality),
+    )
+
+
+def _check_missing_share(
+    frame: pl.DataFrame,
+    columns: list[str],
+    validation: ValidationOptions,
+    name: str,
+) -> list[CheckResult]:
+    checks: list[CheckResult] = []
+    for column in columns:
+        if column not in frame.columns:
+            continue
+        missing_count = frame[column].null_count()
+        missing_share = missing_count / frame.height if frame.height else 0.0
+        if missing_share > validation.max_missing_share:
+            checks.append(
+                CheckResult(
+                    f"{name}.missing_share.{column}",
+                    Status.WARNING,
+                    "Column has high missing share",
+                    {"column": column, "count": missing_count, "share": missing_share},
+                )
+            )
+    return checks
+
+
+def _check_segment_size(
+    frame: pl.DataFrame,
+    segment_col: str,
+    validation: ValidationOptions,
+    name: str,
+) -> CheckResult:
+    if frame.height == 0:
+        return CheckResult(
+            f"{name}.segment_size.{segment_col}",
+            Status.NOT_APPLICABLE,
+            "Segment size cannot be evaluated on an empty dataset",
+        )
+    smallest_segment = (
+        frame.group_by(segment_col)
+        .len()
+        .sort("len")
+        .select([pl.col(segment_col).first(), pl.col("len").first()])
+        .to_dicts()[0]
+    )
+    smallest_count = int(smallest_segment["len"])
+    if smallest_count < validation.min_segment_size:
+        return CheckResult(
+            f"{name}.segment_size.{segment_col}",
+            Status.WARNING,
+            "At least one segment is smaller than the configured minimum",
+            {
+                "segment": str(smallest_segment[segment_col]),
+                "count": smallest_count,
+                "minimum": validation.min_segment_size,
+            },
+        )
+    return CheckResult(
+        f"{name}.segment_size.{segment_col}",
+        Status.OK,
+        "Segment sizes are acceptable",
+        {"minimum": validation.min_segment_size},
     )

@@ -61,6 +61,9 @@ class ValidationOptions(BaseModel):
     min_events: int = DEFAULT_MIN_EVENTS
     min_non_events: int = DEFAULT_MIN_NON_EVENTS
     min_rows: int = DEFAULT_MIN_ROWS
+    min_segment_size: int = 20
+    max_missing_share: float = 0.20
+    pd_boundary_warning_share: float = 0.05
     score_direction: str = "higher_is_riskier"
     clip_pd: ClipPDConfig = Field(default_factory=ClipPDConfig)
 
@@ -69,6 +72,20 @@ class ValidationOptions(BaseModel):
     def _positive_bins(cls, value: int) -> int:
         if value < 2:
             raise ValueError("n_bins must be at least 2")
+        return value
+
+    @field_validator("min_segment_size")
+    @classmethod
+    def _positive_segment_size(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("min_segment_size must be positive")
+        return value
+
+    @field_validator("max_missing_share", "pd_boundary_warning_share")
+    @classmethod
+    def _share_in_unit_interval(cls, value: float) -> float:
+        if not 0 <= value <= 1:
+            raise ValueError("share thresholds must be in [0, 1]")
         return value
 
     @field_validator("score_direction")
