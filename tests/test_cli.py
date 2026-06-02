@@ -64,6 +64,54 @@ def test_cli_pd_validate_accepts_csv(
     assert (tmp_path / "metrics.json").exists()
 
 
+def test_cli_logging_does_not_emit_configured_id_column(
+    sample_frame: pl.DataFrame, tmp_path: Path
+) -> None:
+    frame = sample_frame.with_columns(pl.int_range(pl.len()).alias("customer_id"))
+    reference = tmp_path / "reference.parquet"
+    current = tmp_path / "current.parquet"
+    config = tmp_path / "config.yml"
+    frame.write_parquet(reference)
+    frame.write_parquet(current)
+    config.write_text(
+        """
+columns:
+  target: "target"
+  pd: "pd"
+  score: "score"
+  id: "customer_id"
+validation:
+  min_events: 5
+  min_non_events: 5
+  min_rows: 20
+  score_direction: "lower_is_riskier"
+""",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config),
+            "--reference",
+            str(reference),
+            "--current",
+            str(current),
+            "--output-json",
+            str(tmp_path / "metrics.json"),
+            "--verbose",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Starting PD validation CLI run" in result.output
+    assert "Loaded reference dataset" in result.output
+    assert "Finished PD validation CLI run" in result.output
+    assert "customer_id" not in result.output
+
+
 def test_cli_version() -> None:
     result = CliRunner().invoke(app, ["version"])
     assert result.exit_code == 0

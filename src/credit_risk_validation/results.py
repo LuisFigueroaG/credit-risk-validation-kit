@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from loguru import logger
 
 from credit_risk_validation._version import __version__
 from credit_risk_validation.config import PDValidationConfig
@@ -150,36 +151,69 @@ class PDValidationResult:
         """Exporta metricas, checks y tablas agregadas a JSON."""
 
         output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(self.to_dict(), indent=2, default=str), encoding="utf-8")
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(self.to_dict(), indent=2, default=str), encoding="utf-8"
+            )
+            logger.info("Wrote JSON validation output: path={path}", path=output_path)
+        except Exception:
+            logger.exception(
+                "Failed to write JSON validation output: path={path}", path=output_path
+            )
+            raise
 
     def to_html(self, path: str | Path) -> None:
         """Exporta reporte HTML autocontenido."""
 
         output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(render_html_report(self), encoding="utf-8")
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(render_html_report(self), encoding="utf-8")
+            logger.info("Wrote HTML validation report: path={path}", path=output_path)
+        except Exception:
+            logger.exception(
+                "Failed to write HTML validation report: path={path}", path=output_path
+            )
+            raise
 
     def to_tables(self, directory: str | Path, *, file_format: str = "csv") -> None:
         """Exporta tablas agregadas en CSV o Parquet."""
 
         output_dir = Path(directory)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for name, table in self.tables.items():
-            table = _exportable_table(name, table)
-            if file_format == "parquet":
-                table.write_parquet(output_dir / f"{name}.parquet")
-            elif file_format == "csv":
-                table.write_csv(output_dir / f"{name}.csv")
-            else:
-                raise ValueError("file_format must be csv or parquet")
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            for name, table in self.tables.items():
+                table = _exportable_table(name, table)
+                if file_format == "parquet":
+                    table.write_parquet(output_dir / f"{name}.parquet")
+                elif file_format == "csv":
+                    table.write_csv(output_dir / f"{name}.csv")
+                else:
+                    raise ValueError("file_format must be csv or parquet")
+            logger.info(
+                "Wrote aggregate validation tables: path={path}; format={format}; tables={tables}",
+                path=output_dir,
+                format=file_format,
+                tables=len(self.tables),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to write aggregate validation tables: path={path}", path=output_dir
+            )
+            raise
 
     def to_model_card(self, path: str | Path) -> None:
         """Exporta model card en Markdown."""
 
         output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(render_model_card(self), encoding="utf-8")
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(render_model_card(self), encoding="utf-8")
+            logger.info("Wrote model card: path={path}", path=output_path)
+        except Exception:
+            logger.exception("Failed to write model card: path={path}", path=output_path)
+            raise
 
 
 def _exportable_table(name: str, table: pl.DataFrame) -> pl.DataFrame:

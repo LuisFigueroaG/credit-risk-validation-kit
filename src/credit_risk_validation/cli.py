@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from loguru import logger
 from pydantic import ValidationError
 from rich.console import Console
 
@@ -65,6 +66,7 @@ def pd_validate(
     """Validate binary PD model outputs."""
 
     configure_logging(verbose)
+    logger.info("Starting PD validation CLI run")
     validation_config = PDValidationConfig.from_yaml(config)
     if language:
         try:
@@ -74,13 +76,45 @@ def pd_validate(
         except ValidationError as exc:
             raise typer.BadParameter("language must be one of: en, es") from exc
     suite = PDValidationSuite.from_config(validation_config)
+    logger.info(
+        "Validation columns configured: target={target}; pd={pd}; score_configured={score}; "
+        "period_configured={period}; weight_configured={weight}; segments={segments}",
+        target=validation_config.columns.target,
+        pd=validation_config.columns.pd,
+        score=validation_config.columns.score is not None,
+        period=validation_config.columns.period is not None,
+        weight=validation_config.columns.weight is not None,
+        segments=len(validation_config.columns.segments),
+    )
     console.print(f"Loading reference: {reference}")
     reference_df = read_table(reference)
+    logger.info(
+        "Loaded reference dataset: rows={rows}; columns={columns}",
+        rows=reference_df.height,
+        columns=reference_df.width,
+    )
     console.print(f"Reference rows: {reference_df.height}")
     current_df = read_table(current) if current else None
     if current_df is not None:
+        logger.info(
+            "Loaded current dataset: rows={rows}; columns={columns}",
+            rows=current_df.height,
+            columns=current_df.width,
+        )
         console.print(f"Current rows: {current_df.height}")
     result = suite.run(reference_data=reference_df, current_data=current_df)
+    warning_count = sum(1 for check in result.checks if check.status.value == "WARNING") + sum(
+        1 for metric in result.metrics.values() if metric.status.value == "WARNING"
+    )
+    critical_count = sum(1 for check in result.checks if check.status.value == "CRITICAL") + sum(
+        1 for metric in result.metrics.values() if metric.status.value == "CRITICAL"
+    )
+    logger.info(
+        "Finished PD validation CLI run: status={status}; warnings={warnings}; criticals={criticals}",
+        status=result.status.value,
+        warnings=warning_count,
+        criticals=critical_count,
+    )
 
     if output_html:
         result.to_html(output_html)
