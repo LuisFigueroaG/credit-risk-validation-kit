@@ -18,3 +18,11 @@ score, and configured segment variables. CSI uses the same aggregate
 distribution drift calculation for configured non-score variables. Segment drift
 tables also compare population share, bad rate, and average PD across reference
 and current samples.
+
+## Metric Output Schema
+
+Every metric exported to JSON and metric tables includes audit fields:
+`name`, `value`, `reference_value`, `current_value`, `delta`,
+`threshold_warning`, `threshold_critical`, `status`, `message`, `sample_size`,
+`event_count`, and `non_event_count`. Fields that do not apply to a specific
+metric are exported as null rather than omitted.

@@ -22,23 +22,43 @@ def calibration_metrics(
 ) -> tuple[dict[str, MetricResult], pl.DataFrame]:
     """Calcula Brier, Log Loss, ECE, MCE, O/E y tabla de calibracion."""
 
+    context = _metric_context(y_true)
+    threshold_context = _threshold_context(calibration_abs_error_threshold)
     if len(set(y_true)) < 2:
         message = "Need at least one event and one non-event"
         empty = pl.DataFrame()
         return {
-            "brier": MetricResult("brier", None, Status.INSUFFICIENT_DATA, message),
-            "log_loss": MetricResult("log_loss", None, Status.INSUFFICIENT_DATA, message),
-            "ece": MetricResult("ece", None, Status.INSUFFICIENT_DATA, message),
-            "mce": MetricResult("mce", None, Status.INSUFFICIENT_DATA, message),
-            "oe_ratio": MetricResult("oe_ratio", None, Status.INSUFFICIENT_DATA, message),
-            "calibration_in_the_large": MetricResult(
-                "calibration_in_the_large", None, Status.INSUFFICIENT_DATA, message
+            "brier": _metric_result("brier", None, Status.INSUFFICIENT_DATA, message, context),
+            "log_loss": _metric_result(
+                "log_loss", None, Status.INSUFFICIENT_DATA, message, context
             ),
-            "calibration_intercept": MetricResult(
-                "calibration_intercept", None, Status.INSUFFICIENT_DATA, message
+            "ece": _metric_result(
+                "ece",
+                None,
+                Status.INSUFFICIENT_DATA,
+                message,
+                context,
+                threshold_context,
             ),
-            "calibration_slope": MetricResult(
-                "calibration_slope", None, Status.INSUFFICIENT_DATA, message
+            "mce": _metric_result(
+                "mce",
+                None,
+                Status.INSUFFICIENT_DATA,
+                message,
+                context,
+                threshold_context,
+            ),
+            "oe_ratio": _metric_result(
+                "oe_ratio", None, Status.INSUFFICIENT_DATA, message, context
+            ),
+            "calibration_in_the_large": _metric_result(
+                "calibration_in_the_large", None, Status.INSUFFICIENT_DATA, message, context
+            ),
+            "calibration_intercept": _metric_result(
+                "calibration_intercept", None, Status.INSUFFICIENT_DATA, message, context
+            ),
+            "calibration_slope": _metric_result(
+                "calibration_slope", None, Status.INSUFFICIENT_DATA, message, context
             ),
         }, empty
 
@@ -65,20 +85,36 @@ def calibration_metrics(
         target, pd_values, weight
     )
     return {
-        "brier": MetricResult(
-            "brier", float(brier_score_loss(target, pd_values, sample_weight=weight))
+        "brier": _metric_result(
+            "brier",
+            float(brier_score_loss(target, pd_values, sample_weight=weight)),
+            Status.PASS,
+            "",
+            context,
         ),
-        "log_loss": MetricResult(
-            "log_loss", float(log_loss(target, pd_values, sample_weight=weight))
+        "log_loss": _metric_result(
+            "log_loss",
+            float(log_loss(target, pd_values, sample_weight=weight)),
+            Status.PASS,
+            "",
+            context,
         ),
-        "ece": MetricResult("ece", ece),
-        "mce": MetricResult("mce", mce),
-        "oe_ratio": MetricResult("oe_ratio", oe_ratio),
-        "calibration_in_the_large": MetricResult(
-            "calibration_in_the_large", float(np.average(target - pd_values, weights=weight))
+        "ece": _metric_result("ece", ece, Status.PASS, "", context, threshold_context),
+        "mce": _metric_result("mce", mce, Status.PASS, "", context, threshold_context),
+        "oe_ratio": _metric_result("oe_ratio", oe_ratio, Status.PASS, "", context),
+        "calibration_in_the_large": _metric_result(
+            "calibration_in_the_large",
+            float(np.average(target - pd_values, weights=weight)),
+            Status.PASS,
+            "",
+            context,
         ),
-        "calibration_intercept": MetricResult("calibration_intercept", calibration_intercept),
-        "calibration_slope": MetricResult("calibration_slope", calibration_slope),
+        "calibration_intercept": _metric_result(
+            "calibration_intercept", calibration_intercept, Status.PASS, "", context
+        ),
+        "calibration_slope": _metric_result(
+            "calibration_slope", calibration_slope, Status.PASS, "", context
+        ),
     }, table
 
 
@@ -205,3 +241,45 @@ def _calibration_intercept_and_slope(
         return intercept, slope
     except Exception:
         return None, None
+
+
+def _metric_context(y_true: list[int]) -> dict[str, int]:
+    event_count = int(sum(y_true))
+    sample_size = len(y_true)
+    return {
+        "sample_size": sample_size,
+        "event_count": event_count,
+        "non_event_count": sample_size - event_count,
+    }
+
+
+def _threshold_context(threshold: ThresholdConfig | None) -> dict[str, float | None]:
+    return {
+        "threshold_warning": threshold.warning if threshold else None,
+        "threshold_critical": threshold.critical if threshold else None,
+    }
+
+
+def _metric_result(
+    name: str,
+    value: float | None,
+    status: Status,
+    message: str,
+    context: dict[str, int],
+    threshold_context: dict[str, float | None] | None = None,
+) -> MetricResult:
+    thresholds = threshold_context or {
+        "threshold_warning": None,
+        "threshold_critical": None,
+    }
+    return MetricResult(
+        name,
+        value,
+        status,
+        message,
+        threshold_warning=thresholds["threshold_warning"],
+        threshold_critical=thresholds["threshold_critical"],
+        sample_size=context["sample_size"],
+        event_count=context["event_count"],
+        non_event_count=context["non_event_count"],
+    )

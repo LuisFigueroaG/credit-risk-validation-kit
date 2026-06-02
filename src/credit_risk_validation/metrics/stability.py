@@ -101,6 +101,8 @@ def stability_from_frames(
 
     metrics: dict[str, MetricResult] = {}
     tables: dict[str, pl.DataFrame] = {}
+    context = _metric_context(current, target_col=target_col, positive_class=positive_class)
+    threshold_context = _threshold_context(psi_threshold)
 
     selected_columns = _stable_unique(
         [
@@ -120,11 +122,13 @@ def stability_from_frames(
         )
         status = psi_status(value, psi_threshold)
         metric_name = _psi_metric_name(column, pd_col=pd_col, score_col=score_col)
-        metrics[metric_name] = MetricResult(
+        metrics[metric_name] = _metric_result(
             metric_name,
             value,
             status,
             f"{variable_type.title()} stability for {column}",
+            context,
+            threshold_context,
         )
         table_name = metric_name
         tables[table_name] = table
@@ -148,16 +152,31 @@ def stability_from_frames(
             )
 
     if "psi_pd" not in metrics:
-        metrics["psi_pd"] = MetricResult(
-            "psi_pd", None, Status.NOT_APPLICABLE, "PD column is not available"
+        metrics["psi_pd"] = _metric_result(
+            "psi_pd",
+            None,
+            Status.NOT_APPLICABLE,
+            "PD column is not available",
+            context,
+            threshold_context,
         )
     if score_col and "psi_score" not in metrics:
-        metrics["psi_score"] = MetricResult(
-            "psi_score", None, Status.NOT_APPLICABLE, "Score column is not available"
+        metrics["psi_score"] = _metric_result(
+            "psi_score",
+            None,
+            Status.NOT_APPLICABLE,
+            "Score column is not available",
+            context,
+            threshold_context,
         )
     elif not score_col:
-        metrics["psi_score"] = MetricResult(
-            "psi_score", None, Status.NOT_APPLICABLE, "Score column is not configured"
+        metrics["psi_score"] = _metric_result(
+            "psi_score",
+            None,
+            Status.NOT_APPLICABLE,
+            "Score column is not configured",
+            context,
+            threshold_context,
         )
 
     tables["psi_by_variable"] = pl.DataFrame(variable_rows)
@@ -343,3 +362,44 @@ def _stable_unique(values: list[str | None]) -> list[str]:
         seen.add(value)
         unique.append(value)
     return unique
+
+
+def _metric_context(
+    frame: pl.DataFrame, *, target_col: str, positive_class: int
+) -> dict[str, int | None]:
+    if target_col not in frame.columns:
+        return {"sample_size": frame.height, "event_count": None, "non_event_count": None}
+    event_count = int((frame[target_col] == positive_class).sum())
+    return {
+        "sample_size": frame.height,
+        "event_count": event_count,
+        "non_event_count": frame.height - event_count,
+    }
+
+
+def _threshold_context(threshold: ThresholdConfig) -> dict[str, float | None]:
+    return {
+        "threshold_warning": threshold.warning,
+        "threshold_critical": threshold.critical,
+    }
+
+
+def _metric_result(
+    name: str,
+    value: float | None,
+    status: Status,
+    message: str,
+    context: dict[str, int | None],
+    threshold_context: dict[str, float | None],
+) -> MetricResult:
+    return MetricResult(
+        name,
+        value,
+        status,
+        message,
+        threshold_warning=threshold_context["threshold_warning"],
+        threshold_critical=threshold_context["threshold_critical"],
+        sample_size=context["sample_size"],
+        event_count=context["event_count"],
+        non_event_count=context["non_event_count"],
+    )

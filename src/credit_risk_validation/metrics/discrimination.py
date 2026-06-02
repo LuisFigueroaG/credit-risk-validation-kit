@@ -17,20 +17,21 @@ def auc_gini_ks(
 ) -> dict[str, MetricResult]:
     """Calcula AUC, Gini y KS."""
 
+    context = _metric_context(y_true)
     if len(set(y_true)) < 2:
         message = "Need at least one event and one non-event"
         return {
-            "auc": MetricResult("auc", None, Status.INSUFFICIENT_DATA, message),
-            "gini": MetricResult("gini", None, Status.INSUFFICIENT_DATA, message),
-            "ks": MetricResult("ks", None, Status.INSUFFICIENT_DATA, message),
+            "auc": _metric_result("auc", None, Status.INSUFFICIENT_DATA, message, context),
+            "gini": _metric_result("gini", None, Status.INSUFFICIENT_DATA, message, context),
+            "ks": _metric_result("ks", None, Status.INSUFFICIENT_DATA, message, context),
         }
     auc = float(roc_auc_score(y_true, risk_score, sample_weight=sample_weight))
     gini = 2 * auc - 1
     ks = _ks_statistic(y_true, risk_score, sample_weight)
     return {
-        "auc": MetricResult("auc", auc),
-        "gini": MetricResult("gini", gini),
-        "ks": MetricResult("ks", ks),
+        "auc": _metric_result("auc", auc, Status.PASS, "", context),
+        "gini": _metric_result("gini", gini, Status.PASS, "", context),
+        "ks": _metric_result("ks", ks, Status.PASS, "", context),
     }
 
 
@@ -136,3 +137,31 @@ def _ks_statistic(
     event_cdf = np.cumsum(event_weight) / total_events
     non_event_cdf = np.cumsum(non_event_weight) / total_non_events
     return float(np.max(np.abs(event_cdf - non_event_cdf)))
+
+
+def _metric_context(y_true: list[int]) -> dict[str, int]:
+    event_count = int(sum(y_true))
+    sample_size = len(y_true)
+    return {
+        "sample_size": sample_size,
+        "event_count": event_count,
+        "non_event_count": sample_size - event_count,
+    }
+
+
+def _metric_result(
+    name: str,
+    value: float | None,
+    status: Status,
+    message: str,
+    context: dict[str, int],
+) -> MetricResult:
+    return MetricResult(
+        name,
+        value,
+        status,
+        message,
+        sample_size=context["sample_size"],
+        event_count=context["event_count"],
+        non_event_count=context["non_event_count"],
+    )

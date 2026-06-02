@@ -34,13 +34,29 @@ class MetricResult:
     value: float | None
     status: Status = Status.PASS
     message: str = ""
+    reference_value: float | None = None
+    current_value: float | None = None
+    delta: float | None = None
+    threshold_warning: float | None = None
+    threshold_critical: float | None = None
+    sample_size: int | None = None
+    event_count: int | None = None
+    non_event_count: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "value": self.value,
+            "reference_value": self.reference_value,
+            "current_value": self.current_value,
+            "delta": self.delta,
+            "threshold_warning": self.threshold_warning,
+            "threshold_critical": self.threshold_critical,
             "status": self.status.value,
             "message": self.message,
+            "sample_size": self.sample_size,
+            "event_count": self.event_count,
+            "non_event_count": self.non_event_count,
         }
 
 
