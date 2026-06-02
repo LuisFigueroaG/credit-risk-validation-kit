@@ -75,6 +75,19 @@ discrimination metrics, calibration diagnostics, stability summaries, segment
 tables, methodology notes, and export references. It is self-contained and uses
 aggregate evidence only.
 
+```text
+PD Model Validation Report
+Status: WARNING
+
+Data Quality      PASS
+Discrimination    PASS      AUC 0.79 | Gini 0.58 | KS 0.42
+Calibration       WARNING   O/E 1.18 | ECE 0.031
+Stability         WARNING   PSI PD 0.14 | PSI score 0.08
+Segments          WARNING   2 segments require review
+
+Artifacts: metrics.json, tables/*.csv, model_card.md
+```
+
 ## Datasets
 
 Dataset harness commands use the Kaggle CLI. In this environment, Kaggle network
