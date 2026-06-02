@@ -38,6 +38,32 @@ def test_cli_pd_validate(sample_frame: pl.DataFrame, config_path: Path, tmp_path
     assert (tmp_path / "metrics.json").exists()
 
 
+def test_cli_pd_validate_accepts_csv(
+    sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path
+) -> None:
+    reference = tmp_path / "reference.csv"
+    current = tmp_path / "current.csv"
+    sample_frame.write_csv(reference)
+    sample_frame.write_csv(current)
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config_path),
+            "--reference",
+            str(reference),
+            "--current",
+            str(current),
+            "--output-json",
+            str(tmp_path / "metrics.json"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "metrics.json").exists()
+
+
 def test_cli_version() -> None:
     result = CliRunner().invoke(app, ["version"])
     assert result.exit_code == 0

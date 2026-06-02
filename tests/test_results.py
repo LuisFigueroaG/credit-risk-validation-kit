@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pandas as pd
 import polars as pl
 import pytest
 
@@ -35,6 +36,22 @@ def test_result_exports(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
     assert (tmp_path / "tables" / "lift_table.csv").exists()
     assert (tmp_path / "model_card.md").exists()
     assert "Config SHA-256" in model_card
+
+
+def test_suite_accepts_pandas_dataframes(sample_frame: pl.DataFrame) -> None:
+    pandas_frame = pd.DataFrame(sample_frame.to_dicts())
+    result = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col="score",
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+        score_direction="lower_is_riskier",
+    ).run(reference_data=pandas_frame, current_data=pandas_frame)
+
+    assert result.metadata["reference_rows"] == sample_frame.height
+    assert result.metrics["auc"].value is not None
 
 
 def test_model_card_supports_spanish_language(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
