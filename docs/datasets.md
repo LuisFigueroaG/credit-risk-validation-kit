@@ -20,6 +20,9 @@ Current environment notes:
   - `asyoujie/home-credit-credit-risk-model-stability`
 - The harness prepared and validated all three configured datasets with
   `status=OK` in sample mode.
+- Prepared examples include simple aggregate segment columns: `age_band`,
+  `sex_segment`, and `month_segment`. Home Credit also uses `date_decision` for
+  temporal monitoring when available.
 
 For HTTP 403 competition downloads, enter the competition or accept its terms in
 the Kaggle UI, then rerun the harness. The helper also tries documented public

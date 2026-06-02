@@ -23,6 +23,7 @@ REQUIRED_HARNESS_TABLES = [
     "calibration_bins.csv",
     "stability_summary.csv",
     "psi_by_variable.csv",
+    "segment_metrics.csv",
 ]
 
 
@@ -83,6 +84,7 @@ def run_dataset_harness(dataset_key: str, *, sample_size: int | None = 5000) -> 
     reports_dir = Path("reports") / dataset_key
     result.to_html(reports_dir / "pd_validation_report.html")
     result.to_json(reports_dir / "pd_validation_metrics.json")
+    result.to_model_card(reports_dir / "pd_validation_model_card.md")
     result.to_tables(reports_dir / "tables")
     _verify_harness_outputs(result, reports_dir)
     return f"status={result.status.value}; artifacts=ok; metrics=ok"
@@ -94,6 +96,7 @@ def _verify_harness_outputs(result: PDValidationResult, reports_dir: Path) -> No
         for path in [
             reports_dir / "pd_validation_report.html",
             reports_dir / "pd_validation_metrics.json",
+            reports_dir / "pd_validation_model_card.md",
             *(reports_dir / "tables" / table_name for table_name in REQUIRED_HARNESS_TABLES),
         ]
         if not path.exists()

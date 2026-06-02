@@ -9,10 +9,11 @@ columns:
   target: "target"
   pd: "pd"
   score: "score"
-  period: null
+  period: "date_decision"
   weight: null
   id: null
-  segments: []
+  segments:
+    - "month_segment"
 
 validation:
   positive_class: 1
