@@ -26,3 +26,17 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --all-extras --dev
       - run: uv run pip-licenses --fail-on GPL --fail-on AGPL
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+        with:
+          fail-on-severity: high
