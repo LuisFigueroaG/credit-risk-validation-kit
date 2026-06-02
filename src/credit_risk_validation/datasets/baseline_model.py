@@ -24,6 +24,7 @@ REQUIRED_HARNESS_TABLES = [
     "stability_summary.csv",
     "psi_by_variable.csv",
     "segment_metrics.csv",
+    "temporal_metrics.csv",
 ]
 
 

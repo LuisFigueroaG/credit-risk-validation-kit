@@ -47,3 +47,4 @@ validation:
     assert (reports_dir / "pd_validation_model_card.md").exists()
     assert (reports_dir / "tables" / "psi_by_variable.csv").exists()
     assert (reports_dir / "tables" / "segment_metrics.csv").exists()
+    assert (reports_dir / "tables" / "temporal_metrics.csv").exists()

@@ -15,6 +15,99 @@ from credit_risk_validation.reports.model_card import render_model_card
 from credit_risk_validation.schemas import CheckResult, MetricResult
 from credit_risk_validation.status import Status, worst_status
 
+EMPTY_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
+    "psi_by_variable": {
+        "variable": pl.String,
+        "variable_type": pl.String,
+        "psi": pl.Float64,
+        "status": pl.String,
+        "message": pl.String,
+    },
+    "csi_by_variable": {
+        "variable": pl.String,
+        "variable_type": pl.String,
+        "csi": pl.Float64,
+        "status": pl.String,
+        "message": pl.String,
+    },
+    "segment_metrics": {
+        "segment": pl.String,
+        "count": pl.Int64,
+        "events": pl.Int64,
+        "non_events": pl.Int64,
+        "status": pl.String,
+        "auc": pl.Float64,
+        "gini": pl.Float64,
+        "ks": pl.Float64,
+        "brier": pl.Float64,
+        "log_loss": pl.Float64,
+        "observed_rate": pl.Float64,
+        "mean_pd": pl.Float64,
+    },
+    "segment_analysis": {
+        "segment": pl.String,
+        "count": pl.Int64,
+        "events": pl.Int64,
+        "non_events": pl.Int64,
+        "status": pl.String,
+        "auc": pl.Float64,
+        "gini": pl.Float64,
+        "ks": pl.Float64,
+        "brier": pl.Float64,
+        "log_loss": pl.Float64,
+        "observed_rate": pl.Float64,
+        "mean_pd": pl.Float64,
+    },
+    "current_segment_analysis": {
+        "segment": pl.String,
+        "count": pl.Int64,
+        "events": pl.Int64,
+        "non_events": pl.Int64,
+        "status": pl.String,
+        "auc": pl.Float64,
+        "gini": pl.Float64,
+        "ks": pl.Float64,
+        "brier": pl.Float64,
+        "log_loss": pl.Float64,
+        "observed_rate": pl.Float64,
+        "mean_pd": pl.Float64,
+    },
+    "segment_drift": {
+        "segment_column": pl.String,
+        "segment": pl.String,
+        "reference_count": pl.Int64,
+        "current_count": pl.Int64,
+        "reference_share": pl.Float64,
+        "current_share": pl.Float64,
+        "population_psi": pl.Float64,
+        "reference_bad_rate": pl.Float64,
+        "current_bad_rate": pl.Float64,
+        "reference_avg_pd": pl.Float64,
+        "current_avg_pd": pl.Float64,
+        "bad_rate_delta": pl.Float64,
+        "avg_pd_delta": pl.Float64,
+    },
+    "temporal_metrics": {
+        "dataset": pl.String,
+        "period": pl.String,
+        "rows": pl.Int64,
+        "events": pl.Int64,
+        "non_events": pl.Int64,
+        "bad_rate": pl.Float64,
+        "mean_pd": pl.Float64,
+        "mean_score": pl.Float64,
+        "auc": pl.Float64,
+        "gini": pl.Float64,
+        "ks": pl.Float64,
+        "brier": pl.Float64,
+        "log_loss": pl.Float64,
+        "ece": pl.Float64,
+        "oe_ratio": pl.Float64,
+        "status": pl.String,
+        "message": pl.String,
+    },
+}
+
 
 @dataclass
 class PDValidationResult:
@@ -73,8 +166,7 @@ class PDValidationResult:
         output_dir = Path(directory)
         output_dir.mkdir(parents=True, exist_ok=True)
         for name, table in self.tables.items():
-            if table.is_empty():
-                continue
+            table = _exportable_table(name, table)
             if file_format == "parquet":
                 table.write_parquet(output_dir / f"{name}.parquet")
             elif file_format == "csv":
@@ -88,3 +180,9 @@ class PDValidationResult:
         output_path = Path(path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(render_model_card(self), encoding="utf-8")
+
+
+def _exportable_table(name: str, table: pl.DataFrame) -> pl.DataFrame:
+    if table.width == 0 and name in EMPTY_TABLE_SCHEMAS:
+        return pl.DataFrame(schema=EMPTY_TABLE_SCHEMAS[name])
+    return table
