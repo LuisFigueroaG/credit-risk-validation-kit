@@ -64,13 +64,20 @@ def add_baseline_pd(
     return reference, current
 
 
-def run_dataset_harness(dataset_key: str, *, sample_size: int | None = 5000) -> str:
+def run_dataset_harness(
+    dataset_key: str,
+    *,
+    sample_size: int | None = 5000,
+    processed_dir: Path = Path("data/processed"),
+    reports_root: Path = Path("reports"),
+    config_dir: Path = Path("examples/configs"),
+) -> str:
     """Run validation for prepared dataset files."""
 
-    dataset_dir = Path("data/processed") / dataset_key
+    dataset_dir = processed_dir / dataset_key
     reference_path = dataset_dir / "reference.parquet"
     current_path = dataset_dir / "current.parquet"
-    config_path = Path("examples/configs") / f"{dataset_key}.yml"
+    config_path = config_dir / f"{dataset_key}.yml"
     if not reference_path.exists() or not current_path.exists():
         return "skipped: processed reference/current files not found"
     reference = pl.read_parquet(reference_path)
@@ -82,7 +89,7 @@ def run_dataset_harness(dataset_key: str, *, sample_size: int | None = 5000) -> 
     result = PDValidationSuite.from_config(config).run(
         reference_data=reference, current_data=current
     )
-    reports_dir = Path("reports") / dataset_key
+    reports_dir = reports_root / dataset_key
     result.to_html(reports_dir / "pd_validation_report.html")
     result.to_json(reports_dir / "pd_validation_metrics.json")
     result.to_model_card(reports_dir / "pd_validation_model_card.md")
