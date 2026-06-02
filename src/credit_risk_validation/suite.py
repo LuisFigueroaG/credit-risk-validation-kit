@@ -1,5 +1,6 @@
 """High-level public validation API."""
 
+from dataclasses import replace
 from typing import Any
 
 import polars as pl
@@ -10,6 +11,7 @@ from credit_risk_validation.config import (
     ModelMetadata,
     PDValidationConfig,
     ReportConfig,
+    ThresholdConfig,
     Thresholds,
     ValidationOptions,
 )
@@ -116,6 +118,35 @@ class PDValidationSuite:
             validation=validation,
             calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
         )
+        if current is not None:
+            current_score_col = (
+                columns.score if columns.score and columns.score in current.columns else columns.pd
+            )
+            current_discrimination, _ = discrimination_from_frame(
+                current,
+                target_col=columns.target,
+                score_col=current_score_col,
+                weight_col=columns.weight,
+                validation=validation,
+            )
+            current_calibration, _ = calibration_from_frame(
+                current,
+                target_col=columns.target,
+                pd_col=columns.pd,
+                weight_col=columns.weight,
+                validation=validation,
+                calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+            )
+            discrimination = _attach_current_values(
+                discrimination,
+                current_discrimination,
+                thresholds={
+                    "auc": self.config.thresholds.auc_drop,
+                    "gini": self.config.thresholds.gini_drop,
+                    "ks": self.config.thresholds.ks_drop,
+                },
+            )
+            calibration = _attach_current_values(calibration, current_calibration)
         metrics.update(discrimination)
         metrics.update(calibration)
         tables["data_quality"] = self._data_quality_table(reference, current)
@@ -303,6 +334,78 @@ class PDValidationSuite:
 
 def _metric_table(metrics: dict[str, MetricResult]) -> pl.DataFrame:
     return pl.DataFrame([metric.to_dict() for metric in metrics.values()])
+
+
+def _attach_current_values(
+    reference_metrics: dict[str, MetricResult],
+    current_metrics: dict[str, MetricResult],
+    *,
+    thresholds: dict[str, ThresholdConfig] | None = None,
+) -> dict[str, MetricResult]:
+    return {
+        name: _metric_with_current(
+            metric,
+            current_metrics.get(name),
+            threshold=(thresholds or {}).get(name),
+        )
+        for name, metric in reference_metrics.items()
+    }
+
+
+def _metric_with_current(
+    reference_metric: MetricResult,
+    current_metric: MetricResult | None,
+    *,
+    threshold: ThresholdConfig | None = None,
+) -> MetricResult:
+    if current_metric is None:
+        return replace(
+            reference_metric,
+            reference_value=reference_metric.value,
+            threshold_warning=threshold.warning
+            if threshold
+            else reference_metric.threshold_warning,
+            threshold_critical=threshold.critical
+            if threshold
+            else reference_metric.threshold_critical,
+        )
+
+    reference_value = reference_metric.value
+    current_value = current_metric.value
+    delta = (
+        current_value - reference_value
+        if reference_value is not None and current_value is not None
+        else None
+    )
+    status = worst_status([reference_metric.status, current_metric.status])
+    message = reference_metric.message or current_metric.message
+    warning_threshold = threshold.warning if threshold else reference_metric.threshold_warning
+    critical_threshold = threshold.critical if threshold else reference_metric.threshold_critical
+
+    if (
+        threshold is not None
+        and reference_value is not None
+        and current_value is not None
+        and current_metric.status == Status.OK
+    ):
+        degradation = reference_value - current_value
+        if threshold.critical is not None and degradation >= threshold.critical:
+            status = Status.CRITICAL
+            message = f"{reference_metric.name} degraded by {degradation:.6g}"
+        elif threshold.warning is not None and degradation >= threshold.warning:
+            status = Status.WARNING
+            message = f"{reference_metric.name} degraded by {degradation:.6g}"
+
+    return replace(
+        reference_metric,
+        status=status,
+        message=message,
+        reference_value=reference_value,
+        current_value=current_value,
+        delta=delta,
+        threshold_warning=warning_threshold,
+        threshold_critical=critical_threshold,
+    )
 
 
 def _metric_value(metrics: dict[str, MetricResult], name: str) -> float | None:
