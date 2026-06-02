@@ -66,3 +66,29 @@ def test_metric_results_include_audit_fields(sample_frame: pl.DataFrame, tmp_pat
     discrimination_table = pl.read_csv(tmp_path / "tables" / "discrimination.csv")
     assert "sample_size" in discrimination_table.columns
     assert "event_count" in discrimination_table.columns
+
+
+def test_empty_optional_tables_are_exported_with_headers(
+    sample_frame: pl.DataFrame, tmp_path: Path
+) -> None:
+    result = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col="score",
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+        score_direction="lower_is_riskier",
+    ).run(reference_data=sample_frame)
+
+    result.to_tables(tmp_path / "tables")
+
+    for table_name, expected_columns in {
+        "psi_by_variable.csv": {"variable", "psi", "status"},
+        "segment_metrics.csv": {"segment", "status", "auc"},
+        "temporal_metrics.csv": {"dataset", "period", "status"},
+    }.items():
+        table_path = tmp_path / "tables" / table_name
+        assert table_path.exists()
+        exported = pl.read_csv(table_path)
+        assert expected_columns.issubset(set(exported.columns))
