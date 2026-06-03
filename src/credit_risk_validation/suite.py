@@ -67,12 +67,100 @@ class PDValidationSuite:
         return cls(config=config)
 
     def run(
-        self, *, reference_data: FrameLike, current_data: FrameLike | None = None
+        self,
+        *,
+        validation_data: FrameLike | None = None,
+        reference_data: FrameLike | None = None,
+        current_data: FrameLike | None = None,
     ) -> PDValidationResult:
-        """Ejecuta validacion sobre muestra referencia y opcionalmente muestra actual."""
+        """Ejecuta validacion principal sobre una muestra evaluada."""
+
+        if validation_data is not None and reference_data is not None:
+            raise ValueError("Pass either validation_data or reference_data, not both")
+        if current_data is not None:
+            drift_reference = validation_data if validation_data is not None else reference_data
+            if drift_reference is None:
+                raise ValueError("run with current_data requires reference_data or validation_data")
+            return self.run_drift(reference_data=drift_reference, current_data=current_data)
+        if validation_data is None and reference_data is None:
+            raise ValueError("run requires validation_data")
+
+        source_data = validation_data if validation_data is not None else reference_data
+        if source_data is None:
+            raise ValueError("run requires validation_data")
+        validation_frame = self._prepared(to_polars(source_data))
+        columns = self.config.columns
+        validation = self.config.validation
+
+        checks = validate_contract(validation_frame, columns, validation, name="validation")
+        critical = any(check.status == Status.CRITICAL for check in checks)
+
+        metrics: dict[str, MetricResult] = {}
+        tables: dict[str, pl.DataFrame] = {}
+        if critical:
+            metrics["validation"] = MetricResult(
+                "validation", None, Status.CRITICAL, "Critical data contract failures"
+            )
+            tables["data_quality"] = self._data_quality_table(validation_frame, None)
+            tables["discrimination"] = pl.DataFrame()
+            tables["calibration_bins"] = pl.DataFrame()
+            tables["segment_metrics"] = pl.DataFrame()
+            tables["segment_analysis"] = pl.DataFrame()
+            tables["temporal_metrics"] = pl.DataFrame()
+            return PDValidationResult(
+                self.config,
+                checks,
+                metrics,
+                tables,
+                self._metadata(validation_frame, None, analysis_type="validation"),
+            )
+
+        score_col = (
+            columns.score
+            if columns.score and columns.score in validation_frame.columns
+            else columns.pd
+        )
+        discrimination, lift = discrimination_from_frame(
+            validation_frame,
+            target_col=columns.target,
+            score_col=score_col,
+            weight_col=columns.weight,
+            validation=validation,
+        )
+        calibration, calibration_table = calibration_from_frame(
+            validation_frame,
+            target_col=columns.target,
+            pd_col=columns.pd,
+            weight_col=columns.weight,
+            validation=validation,
+            calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+        )
+        metrics.update(discrimination)
+        metrics.update(calibration)
+        tables["data_quality"] = self._data_quality_table(validation_frame, None)
+        tables["discrimination"] = _metric_table(discrimination)
+        tables["lift_table"] = lift
+        tables["calibration_bins"] = calibration_table
+        segment_table = segment_analysis(validation_frame, columns=columns, validation=validation)
+        tables["segment_metrics"] = segment_table
+        tables["segment_analysis"] = segment_table
+        tables["temporal_metrics"] = self._temporal_metrics(validation_frame, None)
+
+        return PDValidationResult(
+            self.config,
+            checks,
+            metrics,
+            tables,
+            self._metadata(validation_frame, None, analysis_type="validation"),
+        )
+
+    def run_drift(
+        self, *, reference_data: FrameLike, current_data: FrameLike
+    ) -> PDValidationResult:
+        """Ejecuta analisis de drift entre muestra referencia y muestra actual."""
 
         reference = self._prepared(to_polars(reference_data))
-        current = self._prepared(to_polars(current_data)) if current_data is not None else None
+        current = self._prepared(to_polars(current_data))
         columns = self.config.columns
         validation = self.config.validation
 
@@ -97,7 +185,11 @@ class PDValidationSuite:
             tables["segment_metrics"] = pl.DataFrame()
             tables["temporal_metrics"] = pl.DataFrame()
             return PDValidationResult(
-                self.config, checks, metrics, tables, self._metadata(reference, current)
+                self.config,
+                checks,
+                metrics,
+                tables,
+                self._metadata(reference, current, analysis_type="drift"),
             )
 
         score_col = (
@@ -157,49 +249,39 @@ class PDValidationSuite:
         tables["segment_metrics"] = segment_table
         tables["segment_analysis"] = segment_table
 
-        if current is not None:
-            stability_metrics, stability_tables = stability_from_frames(
-                reference,
-                current,
-                pd_col=columns.pd,
-                score_col=columns.score,
-                target_col=columns.target,
-                segment_cols=columns.segments,
-                variable_cols=columns.segments,
-                positive_class=validation.positive_class,
-                n_bins=validation.n_bins,
-                psi_threshold=self.config.thresholds.psi,
-            )
-            metrics.update(stability_metrics)
-            tables.update(stability_tables)
-            tables["stability_summary"] = _metric_table(stability_metrics)
-            if "psi_by_variable" not in stability_tables:
-                tables["psi_by_variable"] = _psi_variable_summary(stability_metrics)
-            if "csi_by_variable" not in stability_tables:
-                tables["csi_by_variable"] = pl.DataFrame()
-            if "segment_drift" not in stability_tables:
-                tables["segment_drift"] = pl.DataFrame()
-            tables["current_segment_analysis"] = segment_analysis(
-                current, columns=columns, validation=validation
-            )
-        else:
-            metrics["psi_pd"] = MetricResult(
-                "psi_pd", None, Status.NOT_APPLICABLE, "Current data was not provided"
-            )
-            metrics["psi_score"] = MetricResult(
-                "psi_score", None, Status.NOT_APPLICABLE, "Current data was not provided"
-            )
-            tables["stability_summary"] = _metric_table(
-                {"psi_pd": metrics["psi_pd"], "psi_score": metrics["psi_score"]}
-            )
-            tables["psi_by_variable"] = pl.DataFrame()
+        stability_metrics, stability_tables = stability_from_frames(
+            reference,
+            current,
+            pd_col=columns.pd,
+            score_col=columns.score,
+            target_col=columns.target,
+            segment_cols=columns.segments,
+            variable_cols=columns.segments,
+            positive_class=validation.positive_class,
+            n_bins=validation.n_bins,
+            psi_threshold=self.config.thresholds.psi,
+        )
+        metrics.update(stability_metrics)
+        tables.update(stability_tables)
+        tables["stability_summary"] = _metric_table(stability_metrics)
+        if "psi_by_variable" not in stability_tables:
+            tables["psi_by_variable"] = _psi_variable_summary(stability_metrics)
+        if "csi_by_variable" not in stability_tables:
             tables["csi_by_variable"] = pl.DataFrame()
+        if "segment_drift" not in stability_tables:
             tables["segment_drift"] = pl.DataFrame()
+        tables["current_segment_analysis"] = segment_analysis(
+            current, columns=columns, validation=validation
+        )
 
         tables["temporal_metrics"] = self._temporal_metrics(reference, current)
 
         return PDValidationResult(
-            self.config, checks, metrics, tables, self._metadata(reference, current)
+            self.config,
+            checks,
+            metrics,
+            tables,
+            self._metadata(reference, current, analysis_type="drift"),
         )
 
     def _prepared(self, frame: pl.DataFrame) -> pl.DataFrame:
@@ -213,8 +295,11 @@ class PDValidationSuite:
             )
         return frame
 
-    def _metadata(self, reference: pl.DataFrame, current: pl.DataFrame | None) -> dict[str, Any]:
-        return {
+    def _metadata(
+        self, reference: pl.DataFrame, current: pl.DataFrame | None, *, analysis_type: str
+    ) -> dict[str, Any]:
+        metadata = {
+            "analysis_type": analysis_type,
             "library_version": __version__,
             "reference_rows": reference.height,
             "current_rows": current.height if current is not None else None,
@@ -225,13 +310,18 @@ class PDValidationSuite:
             else None,
             "privacy": "Only aggregate validation outputs are exported.",
         }
+        if analysis_type == "validation":
+            metadata["validation_rows"] = reference.height
+            metadata["validation_schema_sha256"] = dataframe_schema_sha256(reference)
+        return metadata
 
     def _data_quality_table(
         self, reference: pl.DataFrame, current: pl.DataFrame | None
     ) -> pl.DataFrame:
+        first_name = "validation" if current is None else "reference"
         return pl.DataFrame(
             [
-                self._data_quality_row("reference", reference),
+                self._data_quality_row(first_name, reference),
                 *([self._data_quality_row("current", current)] if current is not None else []),
             ]
         )
@@ -263,7 +353,7 @@ class PDValidationSuite:
         period_col = self.config.columns.period
         if not period_col or period_col not in reference.columns:
             return pl.DataFrame()
-        frames = [("reference", reference)]
+        frames = [("validation" if current is None else "reference", reference)]
         if current is not None and period_col in current.columns:
             frames.append(("current", current))
         rows: list[dict[str, Any]] = []

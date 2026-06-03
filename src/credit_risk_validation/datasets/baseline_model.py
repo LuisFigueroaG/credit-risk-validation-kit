@@ -86,7 +86,7 @@ def run_dataset_harness(
         reference = reference.head(sample_size)
         current = current.head(sample_size)
     config = PDValidationConfig.from_yaml(config_path)
-    result = PDValidationSuite.from_config(config).run(
+    result = PDValidationSuite.from_config(config).run_drift(
         reference_data=reference, current_data=current
     )
     reports_dir = reports_root / dataset_key

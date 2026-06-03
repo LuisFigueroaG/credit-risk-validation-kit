@@ -14,7 +14,7 @@ def test_segment_analysis_returns_rows(sample_frame: pl.DataFrame) -> None:
         min_non_events=5,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=sample_frame)
+    ).run(validation_data=sample_frame)
     table = result.tables["segment_analysis"]
     assert table.height == 2
     assert set(table["status"].to_list()) == {Status.OK.value}
@@ -30,5 +30,5 @@ def test_small_segment_is_insufficient(sample_frame: pl.DataFrame) -> None:
         min_non_events=100,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=sample_frame)
+    ).run(validation_data=sample_frame)
     assert Status.INSUFFICIENT_DATA.value in result.tables["segment_analysis"]["status"].to_list()

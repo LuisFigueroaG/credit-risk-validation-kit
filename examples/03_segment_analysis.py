@@ -19,6 +19,6 @@ result = PDValidationSuite(
     score_col="score",
     segment_cols=["segment"],
     score_direction="lower_is_riskier",
-).run(reference_data=frame)
+).run(validation_data=frame)
 
 print(result.tables["segment_analysis"])

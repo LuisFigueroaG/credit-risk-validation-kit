@@ -16,7 +16,7 @@ frame = pl.DataFrame(
 
 result = PDValidationSuite(
     target_col="target", pd_col="pd", score_col="score", score_direction="lower_is_riskier"
-).run(reference_data=frame, current_data=frame)
+).run(validation_data=frame)
 
 Path("reports").mkdir(exist_ok=True)
 result.to_html("reports/example_report.html")
