@@ -8,9 +8,10 @@
 The missing validation and reporting layer for credit risk models.
 
 Credit Risk Validation Kit (`crvk`) supports validation evidence for binary PD
-models. It validates input contracts, computes discrimination, calibration and
-stability metrics, exports aggregate tables, writes JSON metrics, and generates
-self-contained HTML reports.
+models after training. It validates a scored sample with the real target and the
+model predictions, computes discrimination and calibration metrics, exports
+aggregate tables, writes JSON metrics, and generates self-contained HTML reports.
+Population drift analysis is available as a separate reference/current workflow.
 
 It does not approve models, certify regulatory compliance, calculate regulatory
 capital, or calculate official provisions.
@@ -29,8 +30,7 @@ uv sync --all-extras --dev
 import polars as pl
 from credit_risk_validation import PDValidationSuite
 
-reference_df = pl.read_parquet("data/processed/give_me_some_credit/reference.parquet")
-current_df = pl.read_parquet("data/processed/give_me_some_credit/current.parquet")
+validation_df = pl.read_parquet("data/processed/give_me_some_credit/validation.parquet")
 
 suite = PDValidationSuite(
     target_col="target",
@@ -39,10 +39,20 @@ suite = PDValidationSuite(
     segment_cols=["segment"],
 )
 
-result = suite.run(reference_data=reference_df, current_data=current_df)
+result = suite.run(validation_data=validation_df)
 result.to_html("reports/pd_validation_report.html")
 result.to_json("reports/pd_validation_metrics.json")
 result.to_tables("reports/tables")
+```
+
+For drift monitoring between a baseline population and a newer population:
+
+```python
+reference_df = pl.read_parquet("data/processed/give_me_some_credit/reference.parquet")
+current_df = pl.read_parquet("data/processed/give_me_some_credit/current.parquet")
+
+drift_result = suite.run_drift(reference_data=reference_df, current_data=current_df)
+drift_result.to_html("reports/pd_drift_report.html")
 ```
 
 ## CLI Quickstart
@@ -50,12 +60,21 @@ result.to_tables("reports/tables")
 ```bash
 uv run crvk pd-validate \
   --config examples/configs/give_me_some_credit.yml \
-  --reference data/processed/give_me_some_credit/reference.parquet \
-  --current data/processed/give_me_some_credit/current.parquet \
+  --data data/processed/give_me_some_credit/validation.parquet \
   --output-html reports/give_me_some_credit_report.html \
   --output-json reports/give_me_some_credit_metrics.json \
   --output-tables reports/give_me_some_credit_tables \
   --output-model-card reports/give_me_some_credit_model_card.md
+```
+
+Run drift analysis separately:
+
+```bash
+uv run crvk pd-drift \
+  --config examples/configs/give_me_some_credit.yml \
+  --reference data/processed/give_me_some_credit/reference.parquet \
+  --current data/processed/give_me_some_credit/current.parquet \
+  --output-html reports/give_me_some_credit_drift_report.html
 ```
 
 ## Metrics
@@ -63,17 +82,17 @@ uv run crvk pd-validate \
 - Discrimination: AUC ROC, Gini, KS, lift table, bad rate by bin, event capture.
 - Calibration: Brier Score, Log Loss, calibration bins, ECE, MCE, O/E ratio,
   calibration-in-the-large, calibration intercept and calibration slope.
-- Stability: PSI for PD, score and configured segment variables; CSI and segment
-  drift summaries.
+- Drift: PSI for PD, score and configured segment variables; CSI and segment
+  drift summaries through the separate `pd-drift` / `run_drift` workflow.
 - Segments: aggregate discrimination and calibration summaries by configured
   segments when sample size is sufficient.
 
 ## Report Preview
 
-The HTML report contains a cover, executive summary, data quality checks,
-discrimination metrics, calibration diagnostics, stability summaries, segment
-tables, methodology notes, and export references. It is self-contained and uses
-aggregate evidence only.
+The main HTML validation report contains a cover, executive summary, data quality
+checks, discrimination metrics, calibration diagnostics, segment tables,
+methodology notes, and export references. It is self-contained and uses aggregate
+evidence only. Drift reports add stability summaries and PSI diagnostics.
 
 ```text
 PD Model Validation Report
@@ -82,7 +101,6 @@ Status: WARNING
 Data Quality      OK
 Discrimination    OK      AUC 0.79 | Gini 0.58 | KS 0.42
 Calibration       WARNING   O/E 1.18 | ECE 0.031
-Stability         WARNING   PSI PD 0.14 | PSI score 0.08
 Segments          WARNING   2 segments require review
 
 Artifacts: metrics.json, tables/*.csv, model_card.md

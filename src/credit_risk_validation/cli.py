@@ -19,6 +19,7 @@ from credit_risk_validation.datasets.prepare_give_me_some_credit import prepare_
 from credit_risk_validation.datasets.prepare_home_credit_stability import (
     prepare_home_credit_stability,
 )
+from credit_risk_validation.results import PDValidationResult
 from credit_risk_validation.suite import PDValidationSuite
 from credit_risk_validation.utils.dataframe import read_table
 from credit_risk_validation.utils.logging import configure_logging
@@ -41,7 +42,15 @@ def version() -> None:
 @app.command("pd-validate")
 def pd_validate(
     config: Annotated[Path, typer.Option("--config", "-c", help="YAML validation config.")],
-    reference: Annotated[Path, typer.Option("--reference", "-r", help="Reference CSV/Parquet.")],
+    data: Annotated[
+        Path | None, typer.Option("--data", "-d", help="Validation sample CSV/Parquet.")
+    ] = None,
+    reference: Annotated[
+        Path | None,
+        typer.Option(
+            "--reference", "-r", help="Deprecated alias for --data; with --current runs drift."
+        ),
+    ] = None,
     current: Annotated[Path | None, typer.Option("--current", help="Current CSV/Parquet.")] = None,
     output_html: Annotated[
         Path | None, typer.Option("--output-html", help="Path for HTML report.")
@@ -63,7 +72,7 @@ def pd_validate(
     ] = False,
     verbose: Annotated[bool, typer.Option("--verbose", help="Enable verbose logging.")] = False,
 ) -> None:
-    """Validate binary PD model outputs."""
+    """Validate binary PD model outputs on one evaluated sample."""
 
     configure_logging(verbose)
     logger.info("Starting PD validation CLI run")
@@ -86,23 +95,118 @@ def pd_validate(
         weight=validation_config.columns.weight is not None,
         segments=len(validation_config.columns.segments),
     )
-    console.print(f"Loading reference: {reference}")
-    reference_df = read_table(reference)
-    logger.info(
-        "Loaded reference dataset: rows={rows}; columns={columns}",
-        rows=reference_df.height,
-        columns=reference_df.width,
-    )
-    console.print(f"Reference rows: {reference_df.height}")
-    current_df = read_table(current) if current else None
-    if current_df is not None:
+    if data is not None and reference is not None:
+        raise typer.BadParameter("Pass either --data or --reference, not both")
+    if data is not None and current is not None:
+        raise typer.BadParameter("Use pd-drift --reference/--current for drift analysis")
+    input_path = data or reference
+    if input_path is None:
+        raise typer.BadParameter("Pass --data for model validation")
+
+    if current is not None:
+        console.print(
+            "Running drift analysis via deprecated pd-validate --reference/--current alias"
+        )
+        reference_df = read_table(input_path)
+        current_df = read_table(current)
+        logger.info(
+            "Loaded reference dataset: rows={rows}; columns={columns}",
+            rows=reference_df.height,
+            columns=reference_df.width,
+        )
         logger.info(
             "Loaded current dataset: rows={rows}; columns={columns}",
             rows=current_df.height,
             columns=current_df.width,
         )
+        console.print(f"Reference rows: {reference_df.height}")
         console.print(f"Current rows: {current_df.height}")
-    result = suite.run(reference_data=reference_df, current_data=current_df)
+        result = suite.run_drift(reference_data=reference_df, current_data=current_df)
+    else:
+        console.print(f"Loading validation data: {input_path}")
+        validation_df = read_table(input_path)
+        logger.info(
+            "Loaded validation dataset: rows={rows}; columns={columns}",
+            rows=validation_df.height,
+            columns=validation_df.width,
+        )
+        console.print(f"Validation rows: {validation_df.height}")
+        result = suite.run(validation_data=validation_df)
+
+    _write_outputs(
+        result,
+        output_html=output_html,
+        output_json=output_json,
+        output_tables=output_tables,
+        output_model_card=output_model_card,
+        fail_on_critical=fail_on_critical,
+    )
+
+
+@app.command("pd-drift")
+def pd_drift(
+    config: Annotated[Path, typer.Option("--config", "-c", help="YAML validation config.")],
+    reference: Annotated[Path, typer.Option("--reference", "-r", help="Reference CSV/Parquet.")],
+    current: Annotated[Path, typer.Option("--current", help="Current CSV/Parquet.")],
+    output_html: Annotated[
+        Path | None, typer.Option("--output-html", help="Path for HTML report.")
+    ] = None,
+    output_json: Annotated[
+        Path | None, typer.Option("--output-json", help="Path for JSON metrics.")
+    ] = None,
+    output_tables: Annotated[
+        Path | None, typer.Option("--output-tables", help="Directory for aggregate tables.")
+    ] = None,
+    output_model_card: Annotated[
+        Path | None, typer.Option("--output-model-card", help="Path for Markdown model card.")
+    ] = None,
+    language: Annotated[
+        str | None, typer.Option("--language", help="Override report language from config.")
+    ] = None,
+    fail_on_critical: Annotated[
+        bool, typer.Option("--fail-on-critical", help="Exit non-zero on CRITICAL status.")
+    ] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", help="Enable verbose logging.")] = False,
+) -> None:
+    """Analyze population drift between reference and current samples."""
+
+    configure_logging(verbose)
+    logger.info("Starting PD drift CLI run")
+    validation_config = PDValidationConfig.from_yaml(config)
+    if language:
+        try:
+            validation_config.report = ReportConfig(
+                **{**validation_config.report.model_dump(), "language": language}
+            )
+        except ValidationError as exc:
+            raise typer.BadParameter("language must be one of: en, es") from exc
+    suite = PDValidationSuite.from_config(validation_config)
+    console.print(f"Loading reference: {reference}")
+    reference_df = read_table(reference)
+    console.print(f"Reference rows: {reference_df.height}")
+    console.print(f"Loading current: {current}")
+    current_df = read_table(current)
+    console.print(f"Current rows: {current_df.height}")
+    result = suite.run_drift(reference_data=reference_df, current_data=current_df)
+    _write_outputs(
+        result,
+        output_html=output_html,
+        output_json=output_json,
+        output_tables=output_tables,
+        output_model_card=output_model_card,
+        fail_on_critical=fail_on_critical,
+    )
+
+
+def _write_outputs(
+    result: PDValidationResult,
+    *,
+    output_html: Path | None,
+    output_json: Path | None,
+    output_tables: Path | None,
+    output_model_card: Path | None,
+    fail_on_critical: bool,
+) -> None:
     warning_count = sum(1 for check in result.checks if check.status.value == "WARNING") + sum(
         1 for metric in result.metrics.values() if metric.status.value == "WARNING"
     )

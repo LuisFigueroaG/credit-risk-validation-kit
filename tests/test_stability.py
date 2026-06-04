@@ -48,7 +48,7 @@ def test_temporal_metrics_include_performance_metrics() -> None:
         min_events=1,
         min_non_events=1,
         min_rows=4,
-    ).run(reference_data=frame)
+    ).run(validation_data=frame)
 
     table = result.tables["temporal_metrics"]
     assert table.height == 2
@@ -84,7 +84,7 @@ def test_temporal_metrics_mark_single_class_periods_insufficient() -> None:
         min_events=1,
         min_non_events=1,
         min_rows=4,
-    ).run(reference_data=frame)
+    ).run(validation_data=frame)
 
     table = result.tables["temporal_metrics"]
     insufficient = table.filter(pl.col("period") == "2025-01").to_dicts()[0]
@@ -111,7 +111,7 @@ def test_stability_includes_variable_and_segment_drift_tables(
         min_non_events=5,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=sample_frame, current_data=current)
+    ).run_drift(reference_data=sample_frame, current_data=current)
 
     psi_by_variable = result.tables["psi_by_variable"]
     csi_by_variable = result.tables["csi_by_variable"]

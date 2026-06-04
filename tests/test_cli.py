@@ -10,6 +10,34 @@ from credit_risk_validation.cli import app
 
 
 def test_cli_pd_validate(sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path) -> None:
+    data = tmp_path / "validation.parquet"
+    sample_frame.write_parquet(data)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "pd-validate",
+            "--config",
+            str(config_path),
+            "--data",
+            str(data),
+            "--output-html",
+            str(tmp_path / "report.html"),
+            "--output-json",
+            str(tmp_path / "metrics.json"),
+            "--output-tables",
+            str(tmp_path / "tables"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Validation rows" in result.output
+    assert (tmp_path / "report.html").exists()
+    assert (tmp_path / "metrics.json").exists()
+
+
+def test_cli_pd_validate_reference_current_alias(
+    sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path
+) -> None:
     reference = tmp_path / "reference.parquet"
     current = tmp_path / "current.parquet"
     sample_frame.write_parquet(reference)
@@ -34,7 +62,34 @@ def test_cli_pd_validate(sample_frame: pl.DataFrame, config_path: Path, tmp_path
         ],
     )
     assert result.exit_code == 0, result.output
+    assert "deprecated pd-validate --reference/--current alias" in result.output
     assert (tmp_path / "report.html").exists()
+    assert (tmp_path / "metrics.json").exists()
+
+
+def test_cli_pd_drift(sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path) -> None:
+    reference = tmp_path / "reference.parquet"
+    current = tmp_path / "current.parquet"
+    sample_frame.write_parquet(reference)
+    sample_frame.write_parquet(current)
+    result = CliRunner().invoke(
+        app,
+        [
+            "pd-drift",
+            "--config",
+            str(config_path),
+            "--reference",
+            str(reference),
+            "--current",
+            str(current),
+            "--output-json",
+            str(tmp_path / "metrics.json"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Reference rows" in result.output
+    assert "Current rows" in result.output
     assert (tmp_path / "metrics.json").exists()
 
 
@@ -42,19 +97,15 @@ def test_cli_pd_validate_accepts_csv(
     sample_frame: pl.DataFrame, config_path: Path, tmp_path: Path
 ) -> None:
     reference = tmp_path / "reference.csv"
-    current = tmp_path / "current.csv"
     sample_frame.write_csv(reference)
-    sample_frame.write_csv(current)
     result = CliRunner().invoke(
         app,
         [
             "pd-validate",
             "--config",
             str(config_path),
-            "--reference",
+            "--data",
             str(reference),
-            "--current",
-            str(current),
             "--output-json",
             str(tmp_path / "metrics.json"),
         ],
@@ -129,7 +180,7 @@ def test_cli_rejects_unsupported_language(
             "pd-validate",
             "--config",
             str(config_path),
-            "--reference",
+            "--data",
             str(reference),
             "--language",
             "fr",
@@ -173,7 +224,7 @@ def test_cli_missing_reference_file_fails(config_path: Path, tmp_path: Path) -> 
             "pd-validate",
             "--config",
             str(config_path),
-            "--reference",
+            "--data",
             str(tmp_path / "missing.parquet"),
         ],
     )
@@ -195,7 +246,7 @@ def test_cli_fail_on_critical_returns_nonzero(
             "pd-validate",
             "--config",
             str(config_path),
-            "--reference",
+            "--data",
             str(reference),
             "--fail-on-critical",
         ],

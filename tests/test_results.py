@@ -17,7 +17,7 @@ def test_result_exports(sample_frame: pl.DataFrame, tmp_path: Path) -> None:
         min_non_events=5,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=sample_frame, current_data=sample_frame)
+    ).run_drift(reference_data=sample_frame, current_data=sample_frame)
     result.to_json(tmp_path / "metrics.json")
     result.to_html(tmp_path / "report.html")
     result.to_tables(tmp_path / "tables")
@@ -48,9 +48,10 @@ def test_suite_accepts_pandas_dataframes(sample_frame: pl.DataFrame) -> None:
         min_non_events=5,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=pandas_frame, current_data=pandas_frame)
+    ).run(validation_data=pandas_frame)
 
-    assert result.metadata["reference_rows"] == sample_frame.height
+    assert result.metadata["analysis_type"] == "validation"
+    assert result.metadata["validation_rows"] == sample_frame.height
     assert result.metrics["auc"].value is not None
 
 
@@ -65,7 +66,7 @@ def test_model_card_supports_spanish_language(sample_frame: pl.DataFrame, tmp_pa
         score_direction="lower_is_riskier",
     )
     suite.config.report.language = "es"
-    result = suite.run(reference_data=sample_frame, current_data=sample_frame)
+    result = suite.run(validation_data=sample_frame)
 
     result.to_model_card(tmp_path / "model_card.md")
     model_card = (tmp_path / "model_card.md").read_text(encoding="utf-8")
@@ -85,7 +86,7 @@ def test_metric_results_include_audit_fields(sample_frame: pl.DataFrame, tmp_pat
         min_non_events=5,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=sample_frame, current_data=sample_frame)
+    ).run_drift(reference_data=sample_frame, current_data=sample_frame)
     result.to_tables(tmp_path / "tables")
 
     auc = result.to_dict()["metrics"]["auc"]
@@ -120,7 +121,7 @@ def test_metric_results_populate_reference_current_and_delta(
         min_events=5,
         min_non_events=5,
         min_rows=20,
-    ).run(reference_data=sample_frame, current_data=current)
+    ).run_drift(reference_data=sample_frame, current_data=current)
 
     auc = result.metrics["auc"]
     assert auc.value == auc.reference_value
@@ -159,12 +160,11 @@ def test_empty_optional_tables_are_exported_with_headers(
         min_non_events=5,
         min_rows=20,
         score_direction="lower_is_riskier",
-    ).run(reference_data=sample_frame)
+    ).run(validation_data=sample_frame)
 
     result.to_tables(tmp_path / "tables")
 
     for table_name, expected_columns in {
-        "psi_by_variable.csv": {"variable", "psi", "status"},
         "segment_metrics.csv": {"segment", "status", "auc"},
         "temporal_metrics.csv": {"dataset", "period", "status"},
     }.items():
@@ -172,3 +172,20 @@ def test_empty_optional_tables_are_exported_with_headers(
         assert table_path.exists()
         exported = pl.read_csv(table_path)
         assert expected_columns.issubset(set(exported.columns))
+    assert not (tmp_path / "tables" / "psi_by_variable.csv").exists()
+
+
+def test_run_reference_current_alias_returns_drift(sample_frame: pl.DataFrame) -> None:
+    result = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col="score",
+        min_events=5,
+        min_non_events=5,
+        min_rows=20,
+        score_direction="lower_is_riskier",
+    ).run(reference_data=sample_frame, current_data=sample_frame)
+
+    assert result.metadata["analysis_type"] == "drift"
+    assert "psi_pd" in result.metrics
+    assert "psi_by_variable" in result.tables

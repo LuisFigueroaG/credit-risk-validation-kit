@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from credit_risk_validation.schemas import MetricResult
 
 
-KEY_METRICS = [
+VALIDATION_METRICS = [
     ("auc", "AUC"),
     ("gini", "Gini"),
     ("ks", "KS"),
@@ -22,6 +22,10 @@ KEY_METRICS = [
     ("log_loss", "Log Loss"),
     ("ece", "ECE"),
     ("oe_ratio", "O/E Ratio"),
+]
+
+DRIFT_METRICS = [
+    *VALIDATION_METRICS,
     ("psi_pd", "PSI PD"),
     ("psi_score", "PSI Score"),
 ]
@@ -44,7 +48,12 @@ def render_html_report(result: "PDValidationResult") -> str:
     table_sections = "\n".join(
         _table_section(name, table.to_dicts(), locale) for name, table in result.tables.items()
     )
+    is_drift = _is_drift(result)
     default_view = _default_view(result)
+    overview_metrics = DRIFT_METRICS if is_drift else VALIDATION_METRICS
+    stability_section = (
+        _stability_section(result, locale, chart_sections, default_view) if is_drift else ""
+    )
 
     return f"""<!doctype html>
 <html lang="{escape(result.config.report.language)}">
@@ -56,7 +65,7 @@ def render_html_report(result: "PDValidationResult") -> str:
 </head>
 <body>
   <div class="app-shell">
-    {_sidebar(default_view, include_methodology=result.config.report.include_methodology)}
+    {_sidebar(default_view, include_methodology=result.config.report.include_methodology, include_stability=is_drift)}
     <div class="report-window">
       <header class="topbar">
         <div>
@@ -72,7 +81,7 @@ def render_html_report(result: "PDValidationResult") -> str:
           <button type="button" class="primary">{_icon("share")} Share Report</button>
         </div>
       </header>
-      {_tabs(locale, default_view, include_methodology=result.config.report.include_methodology)}
+      {_tabs(locale, default_view, include_methodology=result.config.report.include_methodology, include_stability=is_drift)}
       <main>
         <section id="view-overview" {_view_attrs("overview", default_view)}>
           <div class="section-heading">
@@ -82,8 +91,8 @@ def render_html_report(result: "PDValidationResult") -> str:
             </div>
             <span class="status-pill {escape(result.status.value.lower())}">{escape(result.status.value)}</span>
           </div>
-          {_status_banner(result.status.value, locale)}
-          {_kpi_grid(result, KEY_METRICS, class_name="overview-kpi-grid")}
+          {_status_banner(result.status.value, locale, is_drift=is_drift)}
+          {_kpi_grid(result, overview_metrics, class_name="overview-kpi-grid")}
           <div class="overview-grid">
             <article class="card findings-card">
               <div class="card-title">
@@ -99,16 +108,7 @@ def render_html_report(result: "PDValidationResult") -> str:
                 <h3>{t(locale, "cover")}</h3>
               </div>
               <dl class="cover-list">
-                <div><dt>{t(locale, "library_version")}</dt><dd>{_metadata_value(result, "library_version", locale)}</dd></div>
-                <div><dt>{t(locale, "pd_horizon")}</dt><dd>{escape(model.horizon)}</dd></div>
-                <div><dt>{t(locale, "target_column")}</dt><dd><code>{escape(columns.target)}</code></dd></div>
-                <div><dt>{t(locale, "pd_column")}</dt><dd><code>{escape(columns.pd)}</code></dd></div>
-                <div><dt>{t(locale, "score_column")}</dt><dd><code>{escape(str(columns.score))}</code></dd></div>
-                <div><dt>{t(locale, "reference_rows")}</dt><dd>{_metadata_value(result, "reference_rows", locale)}</dd></div>
-                <div><dt>{t(locale, "current_rows")}</dt><dd>{_metadata_value(result, "current_rows", locale)}</dd></div>
-                <div><dt>{t(locale, "config_hash")}</dt><dd><code>{_metadata_value(result, "config_sha256", locale)}</code></dd></div>
-                <div><dt>{t(locale, "reference_schema_hash")}</dt><dd><code>{_metadata_value(result, "reference_schema_sha256", locale)}</code></dd></div>
-                <div><dt>{t(locale, "current_schema_hash")}</dt><dd><code>{_metadata_value(result, "current_schema_sha256", locale)}</code></dd></div>
+                {_cover_list_items(result, locale, model.horizon, columns.target, columns.pd, columns.score, is_drift=is_drift)}
               </dl>
             </article>
           </div>
@@ -146,23 +146,7 @@ def render_html_report(result: "PDValidationResult") -> str:
           {_table_panel("calibration_bins", result.tables.get("calibration_bins"), locale)}
         </section>
 
-        <section id="view-stability" {_view_attrs("stability", default_view)}>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Population drift</p>
-              <h2>{t(locale, "stability_title")}</h2>
-              <p>{t(locale, "stability_body")}</p>
-            </div>
-          </div>
-          {_stability_banner(result)}
-          <div class="panel-grid stability-grid">
-            {_psi_variable_card(result, locale)}
-            {_distribution_card(result, "psi_pd", "PD Distribution", "PD")}
-            {_distribution_card(result, "psi_score", "Score Distribution", "Score")}
-          </div>
-          <span class="sr-only">{t(locale, "pd_psi_by_bin")} {t(locale, "score_psi_by_bin")}</span>
-          {_segment_drift_panel(result, locale)}
-        </section>
+        {stability_section}
 
         <section id="view-segments" {_view_attrs("segments", default_view)}>
           <div class="section-heading">
@@ -1234,8 +1218,12 @@ def _styles() -> str:
     """
 
 
+def _is_drift(result: "PDValidationResult") -> bool:
+    return result.metadata.get("analysis_type") == "drift"
+
+
 def _default_view(result: "PDValidationResult") -> str:
-    if any(
+    if _is_drift(result) and any(
         name.startswith("psi_") and metric.status.value in {"CRITICAL", "ERROR", "WARNING"}
         for name, metric in result.metrics.items()
     ):
@@ -1250,16 +1238,17 @@ def _view_attrs(view: str, default_view: str) -> str:
     return f'class="view-section{active_class}" data-view="{escape(view)}"{hidden}'
 
 
-def _sidebar(default_view: str, *, include_methodology: bool) -> str:
+def _sidebar(default_view: str, *, include_methodology: bool, include_stability: bool) -> str:
     items = [
         ("overview", "grid"),
         ("discrimination", "trend"),
         ("calibration", "ruler"),
-        ("stability", "pulse"),
         ("segments", "users"),
         ("data-quality", "shield"),
         ("tables", "table"),
     ]
+    if include_stability:
+        items.insert(3, ("stability", "pulse"))
     if include_methodology:
         items.insert(-1, ("methodology", "book"))
     links = "\n".join(
@@ -1275,15 +1264,22 @@ def _sidebar(default_view: str, *, include_methodology: bool) -> str:
     """
 
 
-def _tabs(locale: dict[str, str], default_view: str, *, include_methodology: bool) -> str:
+def _tabs(
+    locale: dict[str, str],
+    default_view: str,
+    *,
+    include_methodology: bool,
+    include_stability: bool,
+) -> str:
     tabs = [
         ("overview", "grid", "Overview"),
         ("discrimination", "trend", t(locale, "discrimination_title")),
         ("calibration", "ruler", t(locale, "calibration_title")),
-        ("stability", "pulse", t(locale, "stability_title")),
         ("segments", "users", "Segments"),
         ("data-quality", "shield", t(locale, "data_quality")),
     ]
+    if include_stability:
+        tabs.insert(3, ("stability", "pulse", t(locale, "stability_title")))
     if include_methodology:
         tabs.append(("methodology", "book", t(locale, "methodology_title")))
     return (
@@ -1296,7 +1292,7 @@ def _tabs(locale: dict[str, str], default_view: str, *, include_methodology: boo
     )
 
 
-def _status_banner(status: str, locale: dict[str, str]) -> str:
+def _status_banner(status: str, locale: dict[str, str], *, is_drift: bool) -> str:
     status_class = _status_class(status)
     if status == "CRITICAL":
         message = "One or more validation metrics breached a critical threshold."
@@ -1314,11 +1310,17 @@ def _status_banner(status: str, locale: dict[str, str]) -> str:
         <strong>{escape(status)}</strong>
         <p>{escape(message)}</p>
       </div>
+      {_threshold_legend(locale) if is_drift else ""}
+    </div>
+    """
+
+
+def _threshold_legend(locale: dict[str, str]) -> str:
+    return f"""
       <div class="threshold-legend">
         <span><i class="legend-dot warning"></i>{t(locale, "threshold_warning")} 0.10</span>
         <span><i class="legend-dot critical"></i>{t(locale, "threshold_critical")} 0.25</span>
       </div>
-    </div>
     """
 
 
@@ -1349,6 +1351,92 @@ def _stability_banner(result: "PDValidationResult") -> str:
       </div>
     </div>
     """
+
+
+def _stability_section(
+    result: "PDValidationResult",
+    locale: dict[str, str],
+    chart_sections: dict[str, str],
+    default_view: str,
+) -> str:
+    return f"""
+    <section id="view-stability" {_view_attrs("stability", default_view)}>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Population drift</p>
+          <h2>{t(locale, "stability_title")}</h2>
+          <p>{t(locale, "stability_body")}</p>
+        </div>
+      </div>
+      {_stability_banner(result)}
+      <div class="panel-grid stability-grid">
+        {_psi_variable_card(result, locale)}
+        {_distribution_card(result, "psi_pd", "PD Distribution", "PD")}
+        {_distribution_card(result, "psi_score", "Score Distribution", "Score")}
+      </div>
+      <span class="sr-only">{t(locale, "pd_psi_by_bin")} {t(locale, "score_psi_by_bin")}</span>
+      {_segment_drift_panel(result, locale)}
+      <div class="chart-grid two-col">{chart_sections["stability"]}</div>
+    </section>
+    """
+
+
+def _cover_list_items(
+    result: "PDValidationResult",
+    locale: dict[str, str],
+    horizon: str,
+    target_col: str,
+    pd_col: str,
+    score_col: str | None,
+    *,
+    is_drift: bool,
+) -> str:
+    row_items = [
+        (t(locale, "library_version"), _metadata_value(result, "library_version", locale), False),
+        (t(locale, "pd_horizon"), escape(horizon), False),
+        (t(locale, "target_column"), escape(target_col), True),
+        (t(locale, "pd_column"), escape(pd_col), True),
+        (t(locale, "score_column"), escape(str(score_col)), True),
+    ]
+    if is_drift:
+        row_items.extend(
+            [
+                (
+                    t(locale, "reference_rows"),
+                    _metadata_value(result, "reference_rows", locale),
+                    False,
+                ),
+                (t(locale, "current_rows"), _metadata_value(result, "current_rows", locale), False),
+                (
+                    t(locale, "reference_schema_hash"),
+                    _metadata_value(result, "reference_schema_sha256", locale),
+                    True,
+                ),
+                (
+                    t(locale, "current_schema_hash"),
+                    _metadata_value(result, "current_schema_sha256", locale),
+                    True,
+                ),
+            ]
+        )
+    else:
+        row_items.extend(
+            [
+                ("Validation Rows", _metadata_value(result, "validation_rows", locale), False),
+                (
+                    "Validation Schema SHA-256",
+                    _metadata_value(result, "validation_schema_sha256", locale),
+                    True,
+                ),
+            ]
+        )
+    row_items.append(
+        (t(locale, "config_hash"), _metadata_value(result, "config_sha256", locale), True)
+    )
+    return "\n".join(
+        f"<div><dt>{label}</dt><dd>{f'<code>{value}</code>' if code else value}</dd></div>"
+        for label, value, code in row_items
+    )
 
 
 def _kpi_grid(
@@ -1740,6 +1828,11 @@ def _scripts(default_view: str) -> str:
 def _methodology_section(result: "PDValidationResult", locale: dict[str, str]) -> str:
     if not result.config.report.include_methodology:
         return ""
+    stability_card = (
+        f'<article class="card"><div class="card-title"><h3>{t(locale, "stability_title")}</h3></div><p>PSI summarizes distribution stability between reference and current samples.</p></article>'
+        if _is_drift(result)
+        else ""
+    )
     return f"""
     <section id="methodology" class="view-section" data-view="methodology" hidden>
       <div class="section-heading">
@@ -1752,7 +1845,7 @@ def _methodology_section(result: "PDValidationResult", locale: dict[str, str]) -
       <div class="method-card">
         <article class="card"><div class="card-title"><h3>{t(locale, "discrimination_title")}</h3></div><p>AUC, Gini, KS, lift, bad-rate and capture-rate outputs are reported as aggregate metrics and tables.</p></article>
         <article class="card"><div class="card-title"><h3>{t(locale, "calibration_title")}</h3></div><p>Brier Score, Log Loss, ECE, O/E ratio and calibration bins are reported when calculable.</p></article>
-        <article class="card"><div class="card-title"><h3>{t(locale, "stability_title")}</h3></div><p>PSI summarizes distribution stability between reference and current samples.</p></article>
+        {stability_card}
       </div>
     </section>
     """
