@@ -1,10 +1,11 @@
 """Configuration models and YAML loading."""
 
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from credit_risk_validation.constants import (
     DEFAULT_MIN_EVENTS,
@@ -109,6 +110,58 @@ class ThresholdConfig(BaseModel):
     warning_high: float | None = None
     critical_low: float | None = None
     critical_high: float | None = None
+
+    @field_validator(
+        "warning",
+        "critical",
+        "warning_low",
+        "warning_high",
+        "critical_low",
+        "critical_high",
+    )
+    @classmethod
+    def _finite_threshold(cls, value: float | None) -> float | None:
+        if value is not None and not isfinite(value):
+            raise ValueError("threshold values must be finite")
+        return value
+
+    @model_validator(mode="after")
+    def _ordered_thresholds(self) -> "ThresholdConfig":
+        if self.warning is not None and self.critical is not None and self.warning > self.critical:
+            raise ValueError("warning threshold must not exceed critical threshold")
+        if (
+            self.critical_low is not None
+            and self.warning_low is not None
+            and self.critical_low > self.warning_low
+        ):
+            raise ValueError("critical_low must not exceed warning_low")
+        if (
+            self.warning_high is not None
+            and self.critical_high is not None
+            and self.warning_high > self.critical_high
+        ):
+            raise ValueError("warning_high must not exceed critical_high")
+        if (
+            self.warning_low is not None
+            and self.warning_high is not None
+            and self.warning_low >= self.warning_high
+        ):
+            raise ValueError("warning_low must be below warning_high")
+        if (
+            self.critical_low is not None
+            and self.critical_high is not None
+            and self.critical_low >= self.critical_high
+        ):
+            raise ValueError("critical_low must be below critical_high")
+        low_thresholds = [
+            value for value in (self.critical_low, self.warning_low) if value is not None
+        ]
+        high_thresholds = [
+            value for value in (self.warning_high, self.critical_high) if value is not None
+        ]
+        if low_thresholds and high_thresholds and max(low_thresholds) >= min(high_thresholds):
+            raise ValueError("lower thresholds must be below upper thresholds")
+        return self
 
 
 class Thresholds(BaseModel):

@@ -39,6 +39,10 @@ class MetricResult:
     delta: float | None = None
     threshold_warning: float | None = None
     threshold_critical: float | None = None
+    threshold_warning_low: float | None = None
+    threshold_warning_high: float | None = None
+    threshold_critical_low: float | None = None
+    threshold_critical_high: float | None = None
     sample_size: int | None = None
     event_count: int | None = None
     non_event_count: int | None = None
@@ -52,6 +56,10 @@ class MetricResult:
             "delta": self.delta,
             "threshold_warning": self.threshold_warning,
             "threshold_critical": self.threshold_critical,
+            "threshold_warning_low": self.threshold_warning_low,
+            "threshold_warning_high": self.threshold_warning_high,
+            "threshold_critical_low": self.threshold_critical_low,
+            "threshold_critical_high": self.threshold_critical_high,
             "status": self.status.value,
             "message": self.message,
             "sample_size": self.sample_size,
