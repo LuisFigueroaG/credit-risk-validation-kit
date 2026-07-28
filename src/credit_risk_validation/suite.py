@@ -192,15 +192,19 @@ class PDValidationSuite:
                 self._metadata(reference, current, analysis_type="drift"),
             )
 
-        score_col = (
-            columns.score if columns.score and columns.score in reference.columns else columns.pd
+        effective_columns, effective_validation = _effective_drift_discrimination_config(
+            reference,
+            current,
+            columns=columns,
+            validation=validation,
         )
+        score_col = effective_columns.score or effective_columns.pd
         discrimination, lift = discrimination_from_frame(
             reference,
             target_col=columns.target,
             score_col=score_col,
             weight_col=columns.weight,
-            validation=validation,
+            validation=effective_validation,
         )
         calibration, calibration_table = calibration_from_frame(
             reference,
@@ -211,17 +215,14 @@ class PDValidationSuite:
             calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
         )
         if current is not None:
-            current_score_col = (
-                columns.score if columns.score and columns.score in current.columns else columns.pd
-            )
-            current_discrimination, _ = discrimination_from_frame(
+            current_discrimination, current_lift = discrimination_from_frame(
                 current,
                 target_col=columns.target,
-                score_col=current_score_col,
+                score_col=score_col,
                 weight_col=columns.weight,
-                validation=validation,
+                validation=effective_validation,
             )
-            current_calibration, _ = calibration_from_frame(
+            current_calibration, current_calibration_table = calibration_from_frame(
                 current,
                 target_col=columns.target,
                 pd_col=columns.pd,
@@ -245,7 +246,13 @@ class PDValidationSuite:
         tables["discrimination"] = _metric_table(discrimination)
         tables["lift_table"] = lift
         tables["calibration_bins"] = calibration_table
-        segment_table = segment_analysis(reference, columns=columns, validation=validation)
+        tables["current_lift_table"] = current_lift
+        tables["current_calibration_bins"] = current_calibration_table
+        segment_table = segment_analysis(
+            reference,
+            columns=effective_columns,
+            validation=effective_validation,
+        )
         tables["segment_metrics"] = segment_table
         tables["segment_analysis"] = segment_table
 
@@ -271,7 +278,9 @@ class PDValidationSuite:
         if "segment_drift" not in stability_tables:
             tables["segment_drift"] = pl.DataFrame()
         tables["current_segment_analysis"] = segment_analysis(
-            current, columns=columns, validation=validation
+            current,
+            columns=effective_columns,
+            validation=effective_validation,
         )
 
         tables["temporal_metrics"] = self._temporal_metrics(reference, current)
@@ -424,6 +433,27 @@ class PDValidationSuite:
 
 def _metric_table(metrics: dict[str, MetricResult]) -> pl.DataFrame:
     return pl.DataFrame([metric.to_dict() for metric in metrics.values()])
+
+
+def _effective_drift_discrimination_config(
+    reference: pl.DataFrame,
+    current: pl.DataFrame,
+    *,
+    columns: ColumnConfig,
+    validation: ValidationOptions,
+) -> tuple[ColumnConfig, ValidationOptions]:
+    configured_score = columns.score
+    if (
+        configured_score
+        and configured_score in reference.columns
+        and configured_score in current.columns
+    ):
+        return columns, validation
+
+    return (
+        columns.model_copy(update={"score": columns.pd}),
+        validation.model_copy(update={"score_direction": "higher_is_riskier"}),
+    )
 
 
 def _attach_current_values(
