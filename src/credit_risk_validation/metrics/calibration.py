@@ -1,14 +1,19 @@
 """Calibration metrics for binary PD models."""
 
+from dataclasses import dataclass
+from warnings import catch_warnings, filterwarnings, simplefilter
+
 import numpy as np
 import polars as pl
 from scipy.special import logit
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss
 
 from credit_risk_validation.config import ThresholdConfig, ValidationOptions
 from credit_risk_validation.constants import EPSILON
 from credit_risk_validation.schemas import MetricResult
-from credit_risk_validation.status import Status
+from credit_risk_validation.status import Status, worst_status
 from credit_risk_validation.utils.binning import assign_bins, quantile_edges
 
 
@@ -19,11 +24,14 @@ def calibration_metrics(
     n_bins: int,
     sample_weight: list[float] | None = None,
     calibration_abs_error_threshold: ThresholdConfig | None = None,
+    oe_ratio_threshold: ThresholdConfig | None = None,
 ) -> tuple[dict[str, MetricResult], pl.DataFrame]:
     """Calcula Brier, Log Loss, ECE, MCE, O/E y tabla de calibracion."""
 
     context = _metric_context(y_true)
-    threshold_context = _threshold_context(calibration_abs_error_threshold)
+    calibration_threshold = _effective_calibration_threshold(calibration_abs_error_threshold)
+    threshold_context = _threshold_context(calibration_threshold)
+    oe_threshold_context = _threshold_context(oe_ratio_threshold)
     if len(set(y_true)) < 2:
         message = "Need at least one event and one non-event"
         empty = pl.DataFrame()
@@ -49,7 +57,12 @@ def calibration_metrics(
                 threshold_context,
             ),
             "oe_ratio": _metric_result(
-                "oe_ratio", None, Status.INSUFFICIENT_DATA, message, context
+                "oe_ratio",
+                None,
+                Status.INSUFFICIENT_DATA,
+                message,
+                context,
+                oe_threshold_context,
             ),
             "calibration_in_the_large": _metric_result(
                 "calibration_in_the_large", None, Status.INSUFFICIENT_DATA, message, context
@@ -72,7 +85,7 @@ def calibration_metrics(
         pd_values,
         weight=weight,
         n_bins=n_bins,
-        calibration_abs_error_threshold=calibration_abs_error_threshold,
+        calibration_abs_error_threshold=calibration_threshold,
     )
     abs_error = np.abs(table["observed_rate"].to_numpy() - table["mean_pd"].to_numpy())
     bin_weight_share = table["weighted_count"].to_numpy() / float(np.sum(weight))
@@ -81,9 +94,12 @@ def calibration_metrics(
     observed_events = float(np.sum(target * weight))
     expected_events = float(np.sum(pd_values * weight))
     oe_ratio = observed_events / expected_events if expected_events > 0 else None
-    calibration_intercept, calibration_slope = _calibration_intercept_and_slope(
-        target, pd_values, weight
+    ece_status, ece_message = _upper_threshold_status(ece, calibration_threshold, metric_name="ECE")
+    mce_status, mce_message = _upper_threshold_status(mce, calibration_threshold, metric_name="MCE")
+    oe_status, oe_message = _two_sided_threshold_status(
+        oe_ratio, oe_ratio_threshold, metric_name="O/E ratio"
     )
+    calibration_fit = _calibration_intercept_and_slope(target, pd_values, weight)
     return {
         "brier": _metric_result(
             "brier",
@@ -99,9 +115,16 @@ def calibration_metrics(
             "",
             context,
         ),
-        "ece": _metric_result("ece", ece, Status.OK, "", context, threshold_context),
-        "mce": _metric_result("mce", mce, Status.OK, "", context, threshold_context),
-        "oe_ratio": _metric_result("oe_ratio", oe_ratio, Status.OK, "", context),
+        "ece": _metric_result("ece", ece, ece_status, ece_message, context, threshold_context),
+        "mce": _metric_result("mce", mce, mce_status, mce_message, context, threshold_context),
+        "oe_ratio": _metric_result(
+            "oe_ratio",
+            oe_ratio,
+            oe_status,
+            oe_message,
+            context,
+            oe_threshold_context,
+        ),
         "calibration_in_the_large": _metric_result(
             "calibration_in_the_large",
             float(np.average(target - pd_values, weights=weight)),
@@ -110,10 +133,18 @@ def calibration_metrics(
             context,
         ),
         "calibration_intercept": _metric_result(
-            "calibration_intercept", calibration_intercept, Status.OK, "", context
+            "calibration_intercept",
+            calibration_fit.intercept,
+            calibration_fit.status,
+            calibration_fit.message,
+            context,
         ),
         "calibration_slope": _metric_result(
-            "calibration_slope", calibration_slope, Status.OK, "", context
+            "calibration_slope",
+            calibration_fit.slope,
+            calibration_fit.status,
+            calibration_fit.message,
+            context,
         ),
     }, table
 
@@ -187,6 +218,7 @@ def calibration_from_frame(
     weight_col: str | None,
     validation: ValidationOptions,
     calibration_abs_error_threshold: ThresholdConfig | None = None,
+    oe_ratio_threshold: ThresholdConfig | None = None,
 ) -> tuple[dict[str, MetricResult], pl.DataFrame]:
     """Calcula calibracion desde un DataFrame."""
 
@@ -207,6 +239,7 @@ def calibration_from_frame(
         n_bins=validation.n_bins,
         sample_weight=sample_weight,
         calibration_abs_error_threshold=calibration_abs_error_threshold,
+        oe_ratio_threshold=oe_ratio_threshold,
     )
 
 
@@ -216,17 +249,23 @@ def _calibration_bin_status(
     abs_error: float,
     threshold: ThresholdConfig | None,
 ) -> tuple[Status, str]:
+    findings: list[tuple[Status, str]] = []
     if events <= 0:
-        return Status.WARNING, "Calibration bin has no events"
+        findings.append((Status.WARNING, "Calibration bin has no events"))
     if non_events <= 0:
-        return Status.WARNING, "Calibration bin has no non-events"
-    if threshold is None:
-        threshold = ThresholdConfig(warning=0.02, critical=0.05)
-    if threshold.critical is not None and abs_error >= threshold.critical:
-        return Status.CRITICAL, "Calibration absolute error is above critical threshold"
-    if threshold.warning is not None and abs_error >= threshold.warning:
-        return Status.WARNING, "Calibration absolute error is above warning threshold"
-    return Status.OK, ""
+        findings.append((Status.WARNING, "Calibration bin has no non-events"))
+    error_status, error_message = _upper_threshold_status(
+        abs_error,
+        _effective_calibration_threshold(threshold),
+        metric_name="Calibration absolute error",
+    )
+    if error_status != Status.OK:
+        findings.append((error_status, error_message))
+    if not findings:
+        return Status.OK, ""
+    return worst_status([status for status, _ in findings]), "; ".join(
+        message for _, message in findings
+    )
 
 
 def _wilson_interval(
@@ -243,20 +282,76 @@ def _wilson_interval(
     )
 
 
+@dataclass(frozen=True)
+class _CalibrationFit:
+    intercept: float | None
+    slope: float | None
+    status: Status
+    message: str
+
+
 def _calibration_intercept_and_slope(
     y_true: np.ndarray, y_pred_pd: np.ndarray, weight: np.ndarray
-) -> tuple[float | None, float | None]:
-    try:
-        from sklearn.linear_model import LogisticRegression
+) -> _CalibrationFit:
+    x_values = logit(np.clip(y_pred_pd, EPSILON, 1 - EPSILON))
+    active = weight > 0
+    active_x = x_values[active]
+    active_y = y_true[active]
+    if len(active_x) == 0 or len(np.unique(active_y)) < 2:
+        return _CalibrationFit(
+            None,
+            None,
+            Status.INSUFFICIENT_DATA,
+            "Need positive weight for at least one event and one non-event",
+        )
+    if len(np.unique(active_x)) < 2:
+        return _CalibrationFit(
+            None,
+            None,
+            Status.INSUFFICIENT_DATA,
+            "Calibration intercept and slope are not identifiable for constant PD",
+        )
 
-        x = logit(np.clip(y_pred_pd, EPSILON, 1 - EPSILON)).reshape(-1, 1)
-        model = LogisticRegression(fit_intercept=True, solver="lbfgs")
-        model.fit(x, y_true, sample_weight=weight)
+    event_x = active_x[active_y == 1]
+    non_event_x = active_x[active_y == 0]
+    if np.min(event_x) >= np.max(non_event_x) or np.min(non_event_x) >= np.max(event_x):
+        return _CalibrationFit(
+            None,
+            None,
+            Status.INSUFFICIENT_DATA,
+            "Calibration intercept and slope are not finite under complete or quasi separation",
+        )
+
+    try:
+        model = LogisticRegression(C=np.inf, fit_intercept=True, solver="lbfgs", max_iter=1000)
+        with catch_warnings():
+            filterwarnings(
+                "ignore",
+                message="Setting penalty=None will ignore the C and l1_ratio parameters",
+                category=UserWarning,
+                module="sklearn.linear_model._logistic",
+            )
+            simplefilter("error", ConvergenceWarning)
+            model.fit(x_values.reshape(-1, 1), y_true, sample_weight=weight)
         intercept = float(np.ravel(model.intercept_)[0])
         slope = float(np.ravel(model.coef_)[0])
-        return intercept, slope
-    except Exception:
-        return None, None
+        if not np.isfinite(intercept) or not np.isfinite(slope):
+            raise ArithmeticError("calibration fit produced non-finite coefficients")
+        return _CalibrationFit(intercept, slope, Status.OK, "")
+    except ConvergenceWarning:
+        return _CalibrationFit(
+            None,
+            None,
+            Status.INSUFFICIENT_DATA,
+            "Calibration intercept and slope did not converge",
+        )
+    except Exception as exc:
+        return _CalibrationFit(
+            None,
+            None,
+            Status.ERROR,
+            f"Calibration intercept and slope failed: {type(exc).__name__}",
+        )
 
 
 def _metric_context(y_true: list[int]) -> dict[str, int]:
@@ -269,10 +364,50 @@ def _metric_context(y_true: list[int]) -> dict[str, int]:
     }
 
 
+def _effective_calibration_threshold(threshold: ThresholdConfig | None) -> ThresholdConfig:
+    return threshold or ThresholdConfig(warning=0.02, critical=0.05)
+
+
+def _upper_threshold_status(
+    value: float,
+    threshold: ThresholdConfig,
+    *,
+    metric_name: str,
+) -> tuple[Status, str]:
+    if threshold.critical is not None and value >= threshold.critical:
+        return Status.CRITICAL, f"{metric_name} is at or above critical threshold"
+    if threshold.warning is not None and value >= threshold.warning:
+        return Status.WARNING, f"{metric_name} is at or above warning threshold"
+    return Status.OK, ""
+
+
+def _two_sided_threshold_status(
+    value: float | None,
+    threshold: ThresholdConfig | None,
+    *,
+    metric_name: str,
+) -> tuple[Status, str]:
+    if value is None or threshold is None:
+        return Status.OK, ""
+    if threshold.critical_low is not None and value <= threshold.critical_low:
+        return Status.CRITICAL, f"{metric_name} is at or below critical lower threshold"
+    if threshold.critical_high is not None and value >= threshold.critical_high:
+        return Status.CRITICAL, f"{metric_name} is at or above critical upper threshold"
+    if threshold.warning_low is not None and value <= threshold.warning_low:
+        return Status.WARNING, f"{metric_name} is at or below warning lower threshold"
+    if threshold.warning_high is not None and value >= threshold.warning_high:
+        return Status.WARNING, f"{metric_name} is at or above warning upper threshold"
+    return Status.OK, ""
+
+
 def _threshold_context(threshold: ThresholdConfig | None) -> dict[str, float | None]:
     return {
         "threshold_warning": threshold.warning if threshold else None,
         "threshold_critical": threshold.critical if threshold else None,
+        "threshold_warning_low": threshold.warning_low if threshold else None,
+        "threshold_warning_high": threshold.warning_high if threshold else None,
+        "threshold_critical_low": threshold.critical_low if threshold else None,
+        "threshold_critical_high": threshold.critical_high if threshold else None,
     }
 
 
@@ -287,6 +422,10 @@ def _metric_result(
     thresholds = threshold_context or {
         "threshold_warning": None,
         "threshold_critical": None,
+        "threshold_warning_low": None,
+        "threshold_warning_high": None,
+        "threshold_critical_low": None,
+        "threshold_critical_high": None,
     }
     return MetricResult(
         name,
@@ -295,6 +434,10 @@ def _metric_result(
         message,
         threshold_warning=thresholds["threshold_warning"],
         threshold_critical=thresholds["threshold_critical"],
+        threshold_warning_low=thresholds["threshold_warning_low"],
+        threshold_warning_high=thresholds["threshold_warning_high"],
+        threshold_critical_low=thresholds["threshold_critical_low"],
+        threshold_critical_high=thresholds["threshold_critical_high"],
         sample_size=context["sample_size"],
         event_count=context["event_count"],
         non_event_count=context["non_event_count"],

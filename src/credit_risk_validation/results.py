@@ -11,6 +11,7 @@ from loguru import logger
 
 from credit_risk_validation._version import __version__
 from credit_risk_validation.config import PDValidationConfig
+from credit_risk_validation.reports.anonymization import project_result_for_export
 from credit_risk_validation.reports.html import render_html_report
 from credit_risk_validation.reports.model_card import render_model_card
 from credit_risk_validation.schemas import CheckResult, MetricResult
@@ -131,6 +132,12 @@ class PDValidationResult:
     def to_dict(self) -> dict[str, Any]:
         """Convierte el resultado a un diccionario JSON-safe."""
 
+        projected = project_result_for_export(self)
+        return projected._to_dict()
+
+    def _to_dict(self) -> dict[str, Any]:
+        """Build the serialized representation of an already projected result."""
+
         return {
             "version": __version__,
             "created_at": self.created_at,
@@ -169,7 +176,8 @@ class PDValidationResult:
         output_path = Path(path)
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(render_html_report(self), encoding="utf-8")
+            projected = project_result_for_export(self)
+            output_path.write_text(render_html_report(projected), encoding="utf-8")
             logger.info("Wrote HTML validation report: path={path}", path=output_path)
         except Exception:
             logger.exception(
@@ -183,7 +191,8 @@ class PDValidationResult:
         output_dir = Path(directory)
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
-            for name, table in self.tables.items():
+            projected = project_result_for_export(self)
+            for name, table in projected.tables.items():
                 table = _exportable_table(name, table)
                 if file_format == "parquet":
                     table.write_parquet(output_dir / f"{name}.parquet")
@@ -209,7 +218,8 @@ class PDValidationResult:
         output_path = Path(path)
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(render_model_card(self), encoding="utf-8")
+            projected = project_result_for_export(self)
+            output_path.write_text(render_model_card(projected), encoding="utf-8")
             logger.info("Wrote model card: path={path}", path=output_path)
         except Exception:
             logger.exception("Failed to write model card: path={path}", path=output_path)

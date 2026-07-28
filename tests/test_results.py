@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from credit_risk_validation import PDValidationSuite, __version__
+from credit_risk_validation.config import ThresholdConfig
 from credit_risk_validation.status import Status
 
 
@@ -189,3 +190,28 @@ def test_run_reference_current_alias_returns_drift(sample_frame: pl.DataFrame) -
     assert result.metadata["analysis_type"] == "drift"
     assert "psi_pd" in result.metrics
     assert "psi_by_variable" in result.tables
+
+
+def test_suite_applies_oe_ratio_threshold_to_overall_status() -> None:
+    frame = pl.DataFrame({"target": [0, 1] * 20, "pd": [0.25] * 40})
+    suite = PDValidationSuite(
+        target_col="target",
+        pd_col="pd",
+        score_col=None,
+        min_events=1,
+        min_non_events=1,
+        min_rows=1,
+    )
+    suite.config.thresholds.calibration_abs_error = ThresholdConfig(
+        warning=1.0,
+        critical=2.0,
+    )
+
+    result = suite.run(validation_data=frame)
+
+    oe_ratio = result.metrics["oe_ratio"]
+    assert oe_ratio.value == pytest.approx(2.0)
+    assert oe_ratio.status == Status.CRITICAL
+    assert oe_ratio.threshold_warning_high == pytest.approx(1.25)
+    assert oe_ratio.threshold_critical_high == pytest.approx(1.43)
+    assert result.status == Status.CRITICAL

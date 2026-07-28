@@ -41,16 +41,30 @@ def lift_table(
     *,
     n_bins: int,
     sample_weight: list[float] | None = None,
+    display_score: list[float] | None = None,
 ) -> pl.DataFrame:
-    """Genera lift y captura acumulada por decil de riesgo."""
+    """Genera lift y captura acumulada sin dividir scores empatados.
+
+    Args:
+        y_true: Indicador binario del evento observado.
+        risk_score: Score transformado donde un valor mayor implica más riesgo.
+        n_bins: Cantidad máxima de grupos de riesgo.
+        sample_weight: Pesos opcionales de las observaciones.
+        display_score: Score original que se mostrará en los límites de cada grupo.
+
+    Returns:
+        Tabla de lift ordenada desde mayor a menor riesgo. La cantidad efectiva
+        de grupos puede ser menor que ``n_bins`` cuando un corte nominal divide
+        observaciones con el mismo score.
+    """
 
     values = np.asarray(risk_score, dtype=float)
+    displayed_values = values if display_score is None else np.asarray(display_score, dtype=float)
     target = np.asarray(y_true, dtype=int)
     weight = (
         np.ones(len(target), dtype=float) if sample_weight is None else np.asarray(sample_weight)
     )
-    order = np.argsort(-values)
-    bins = np.array_split(order, min(n_bins, len(order)))
+    bins = _tie_aware_bins(values, n_bins)
     total_events = float(np.sum(target * weight))
     total_weight = float(np.sum(weight))
     overall_rate = total_events / total_weight if total_weight else 0.0
@@ -81,8 +95,8 @@ def lift_table(
                 "cumulative_population_share": cumulative_weight / total_weight
                 if total_weight
                 else None,
-                "min_score": float(np.min(values[row_index])),
-                "max_score": float(np.max(values[row_index])),
+                "min_score": float(np.min(displayed_values[row_index])),
+                "max_score": float(np.max(displayed_values[row_index])),
             }
         )
     return pl.DataFrame(rows)
@@ -99,7 +113,8 @@ def discrimination_from_frame(
     """Calcula metricas de discriminacion desde un DataFrame."""
 
     y_true = [int(value == validation.positive_class) for value in frame[target_col].to_list()]
-    risk_score = [float(value) for value in frame[score_col].to_list()]
+    original_score = [float(value) for value in frame[score_col].to_list()]
+    risk_score = original_score
     if validation.score_direction in {"lower_is_riskier", "higher_is_safer"}:
         risk_score = [-value for value in risk_score]
     sample_weight = (
@@ -113,6 +128,7 @@ def discrimination_from_frame(
         risk_score,
         n_bins=validation.n_bins,
         sample_weight=sample_weight,
+        display_score=original_score,
     )
     return metrics, table
 
@@ -125,7 +141,8 @@ def _ks_statistic(
     weight = (
         np.ones(len(target), dtype=float) if sample_weight is None else np.asarray(sample_weight)
     )
-    order = np.argsort(-score)
+    order = np.argsort(-score, kind="stable")
+    score = score[order]
     target = target[order]
     weight = weight[order]
     event_weight = target * weight
@@ -134,9 +151,54 @@ def _ks_statistic(
     total_non_events = float(np.sum(non_event_weight))
     if total_events == 0 or total_non_events == 0:
         return float("nan")
-    event_cdf = np.cumsum(event_weight) / total_events
-    non_event_cdf = np.cumsum(non_event_weight) / total_non_events
+    tie_ends = np.concatenate((score[1:] != score[:-1], np.array([True])))
+    event_cdf = np.cumsum(event_weight)[tie_ends] / total_events
+    non_event_cdf = np.cumsum(non_event_weight)[tie_ends] / total_non_events
     return float(np.max(np.abs(event_cdf - non_event_cdf)))
+
+
+def _tie_aware_bins(values: np.ndarray, n_bins: int) -> list[np.ndarray]:
+    """Agrupa índices ordenados sin cortar observaciones con el mismo score.
+
+    Args:
+        values: Scores de riesgo, donde un valor mayor representa más riesgo.
+        n_bins: Cantidad máxima de grupos solicitada.
+
+    Returns:
+        Lista de índices por grupo, ordenada desde mayor a menor riesgo.
+
+    Raises:
+        ValueError: Si ``n_bins`` no es positivo o no hay observaciones.
+    """
+
+    row_count = len(values)
+    effective_bins = min(n_bins, row_count)
+    if effective_bins <= 0:
+        raise ValueError("n_bins must be positive and values must not be empty")
+
+    order = np.argsort(-values, kind="stable")
+    sorted_values = values[order]
+    base_size, larger_bin_count = divmod(row_count, effective_bins)
+    nominal_sizes = np.full(effective_bins, base_size, dtype=int)
+    nominal_sizes[:larger_bin_count] += 1
+    nominal_ends = np.cumsum(nominal_sizes)
+
+    bins: list[np.ndarray] = []
+    start = 0
+    for nominal_end_value in nominal_ends:
+        nominal_end = int(nominal_end_value)
+        if nominal_end <= start:
+            continue
+
+        end = nominal_end
+        while end < row_count and sorted_values[end] == sorted_values[end - 1]:
+            end += 1
+        bins.append(order[start:end])
+        start = end
+        if start == row_count:
+            break
+
+    return bins
 
 
 def _metric_context(y_true: list[int]) -> dict[str, int]:

@@ -31,22 +31,21 @@ def segment_analysis(
             ]
         )
 
-    working = frame.with_columns(
-        pl.concat_str(
-            [pl.col(column).cast(pl.Utf8) for column in columns.segments], separator=" | "
-        ).alias("__segment_key")
-    )
     rows: list[dict[str, object]] = []
-    for segment_key in working["__segment_key"].unique().to_list():
-        segment_df = working.filter(pl.col("__segment_key") == segment_key)
+    for segment_values, segment_df in frame.group_by(columns.segments, maintain_order=True):
+        segment_label = _segment_label(segment_values)
         target = segment_df[columns.target]
         events = int((target == validation.positive_class).sum())
         non_events = segment_df.height - events
         mean_pd = optional_float(segment_df[columns.pd].mean())
-        if events < validation.min_events or non_events < validation.min_non_events:
+        if (
+            segment_df.height < validation.min_segment_size
+            or events < validation.min_events
+            or non_events < validation.min_non_events
+        ):
             rows.append(
                 {
-                    "segment": segment_key,
+                    "segment": segment_label,
                     "count": segment_df.height,
                     "events": events,
                     "non_events": non_events,
@@ -77,7 +76,7 @@ def segment_analysis(
         )
         rows.append(
             {
-                "segment": segment_key,
+                "segment": segment_label,
                 "count": segment_df.height,
                 "events": events,
                 "non_events": non_events,
@@ -92,3 +91,25 @@ def segment_analysis(
             }
         )
     return pl.DataFrame(rows).sort("segment")
+
+
+def _segment_label(values: tuple[object, ...]) -> str:
+    """Construye una etiqueta publica sin perder la identidad del grupo.
+
+    Los grupos se calculan con los valores estructurados originales. Esta etiqueta
+    solo se usa para presentacion y exportacion, por lo que escapa el separador y
+    reserva ``MISSING`` para representar valores nulos.
+    """
+
+    return " | ".join(_escape_segment_value(value) for value in values)
+
+
+def _escape_segment_value(value: object) -> str:
+    """Convierte un componente de segmento en una representacion no ambigua."""
+
+    if value is None:
+        return "MISSING"
+    escaped = str(value).replace("\\", "\\\\").replace("|", "\\|")
+    if escaped == "MISSING":
+        return "\\MISSING"
+    return escaped

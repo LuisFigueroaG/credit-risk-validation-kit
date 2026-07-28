@@ -1,6 +1,8 @@
 """Stability and drift metrics."""
 
+import hashlib
 import re
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -14,25 +16,39 @@ from credit_risk_validation.utils.binning import assign_bins, quantile_edges
 
 
 def psi_numeric(
-    reference: list[float], current: list[float], *, n_bins: int
+    reference: Sequence[float | int | None],
+    current: Sequence[float | int | None],
+    *,
+    n_bins: int,
 ) -> tuple[float, pl.DataFrame]:
-    """Calcula PSI numerico usando bordes de cuantiles del periodo referencia."""
+    """Calcula PSI numerico preservando valores faltantes y no finitos.
 
-    edges = quantile_edges(reference, n_bins)
-    ref_bins = assign_bins(reference, edges)
-    cur_bins = assign_bins(current, edges)
-    rows: list[dict[str, float | int]] = []
+    Los bordes se obtienen exclusivamente de los valores finitos de referencia.
+    El bin cero agrupa nulos, NaN e infinitos, mientras que los denominadores
+    conservan el total original de cada muestra.
+    """
+
+    reference_finite = _finite_numeric_values(reference)
+    edges = quantile_edges(reference_finite, n_bins)
+    ref_bins = _numeric_bins(reference, edges)
+    cur_bins = _numeric_bins(current, edges)
+    rows: list[dict[str, float | int | str]] = []
     psi_value = 0.0
     for bin_id in sorted(set(ref_bins.tolist()) | set(cur_bins.tolist())):
         ref_count = int(np.sum(ref_bins == bin_id))
         cur_count = int(np.sum(cur_bins == bin_id))
-        ref_share = max(ref_count / max(len(reference), 1), EPSILON)
-        cur_share = max(cur_count / max(len(current), 1), EPSILON)
-        contribution = (cur_share - ref_share) * float(np.log(cur_share / ref_share))
+        ref_share = ref_count / max(len(reference), 1)
+        cur_share = cur_count / max(len(current), 1)
+        safe_ref_share = max(ref_share, EPSILON)
+        safe_cur_share = max(cur_share, EPSILON)
+        contribution = (safe_cur_share - safe_ref_share) * float(
+            np.log(safe_cur_share / safe_ref_share)
+        )
         psi_value += contribution
         rows.append(
             {
                 "bin": int(bin_id),
+                "bucket": "MISSING" if bin_id == 0 else f"BIN_{bin_id}",
                 "reference_count": ref_count,
                 "current_count": cur_count,
                 "reference_share": ref_share,
@@ -112,16 +128,24 @@ def stability_from_frames(
             *(segment_cols or []),
         ]
     )
+    available_columns = [
+        column
+        for column in selected_columns
+        if column in reference.columns and column in current.columns
+    ]
+    metric_names = _psi_metric_names(
+        available_columns,
+        pd_col=pd_col,
+        score_col=score_col,
+    )
     variable_rows: list[dict[str, Any]] = []
     csi_rows: list[dict[str, Any]] = []
-    for column in selected_columns:
-        if column not in reference.columns or column not in current.columns:
-            continue
+    for column in available_columns:
         value, table, variable_type = psi_for_column(
             reference, current, column=column, n_bins=n_bins
         )
         status = psi_status(value, psi_threshold)
-        metric_name = _psi_metric_name(column, pd_col=pd_col, score_col=score_col)
+        metric_name = metric_names[column]
         metrics[metric_name] = _metric_result(
             metric_name,
             value,
@@ -204,17 +228,11 @@ def psi_for_column(
     reference_series = reference[column]
     current_series = current[column]
     if reference_series.dtype.is_numeric() and current_series.dtype.is_numeric():
-        ref_values = [
-            float(value)
-            for value in reference_series.drop_nulls().to_list()
-            if np.isfinite(float(value))
-        ]
-        cur_values = [
-            float(value)
-            for value in current_series.drop_nulls().to_list()
-            if np.isfinite(float(value))
-        ]
-        value, table = psi_numeric(ref_values, cur_values, n_bins=n_bins)
+        value, table = psi_numeric(
+            reference_series.to_list(),
+            current_series.to_list(),
+            n_bins=n_bins,
+        )
         return value, _with_variable_columns(table, column, "numeric"), "numeric"
 
     value, table = psi_categorical(
@@ -345,12 +363,58 @@ def _safe_metric_name(column: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", column.lower()).strip("_")
 
 
-def _psi_metric_name(column: str, *, pd_col: str, score_col: str | None) -> str:
-    if column == pd_col:
-        return "psi_pd"
-    if score_col is not None and column == score_col:
-        return "psi_score"
-    return f"psi_{_safe_metric_name(column)}"
+def _psi_metric_names(columns: list[str], *, pd_col: str, score_col: str | None) -> dict[str, str]:
+    """Genera claves PSI unicas, estables y compatibles para las columnas."""
+
+    reserved_names = {"psi_pd", "psi_score"}
+    custom_columns_by_name: dict[str, list[str]] = {}
+    for column in columns:
+        if column == pd_col or (score_col is not None and column == score_col):
+            continue
+        base_name = f"psi_{_safe_metric_name(column)}"
+        custom_columns_by_name.setdefault(base_name, []).append(column)
+
+    metric_names: dict[str, str] = {}
+    for column in columns:
+        if column == pd_col:
+            metric_names[column] = "psi_pd"
+            continue
+        if score_col is not None and column == score_col:
+            metric_names[column] = "psi_score"
+            continue
+
+        base_name = f"psi_{_safe_metric_name(column)}"
+        has_collision = base_name in reserved_names or len(custom_columns_by_name[base_name]) > 1
+        if has_collision:
+            digest = hashlib.sha256(column.encode("utf-8")).hexdigest()[:8]
+            metric_names[column] = f"{base_name}_{digest}"
+        else:
+            metric_names[column] = base_name
+    return metric_names
+
+
+def _finite_numeric_values(values: Sequence[float | int | None]) -> list[float]:
+    """Retorna los valores numericos finitos de una muestra."""
+
+    return [float(value) for value in values if value is not None and np.isfinite(float(value))]
+
+
+def _numeric_bins(values: Sequence[float | int | None], edges: np.ndarray) -> np.ndarray:
+    """Asigna bins numericos y reserva cero para faltantes o no finitos."""
+
+    bins = np.zeros(len(values), dtype=int)
+    finite_indices: list[int] = []
+    finite_values: list[float] = []
+    for index, value in enumerate(values):
+        if value is None:
+            continue
+        numeric = float(value)
+        if np.isfinite(numeric):
+            finite_indices.append(index)
+            finite_values.append(numeric)
+    if finite_values:
+        bins[finite_indices] = assign_bins(finite_values, edges)
+    return bins
 
 
 def _stable_unique(values: list[str | None]) -> list[str]:
