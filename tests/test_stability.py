@@ -223,7 +223,7 @@ def test_temporal_metrics_include_performance_metrics() -> None:
     for column in ["auc", "gini", "ks", "brier", "log_loss", "ece", "oe_ratio", "status"]:
         assert column in table.columns
     assert table["auc"].drop_nulls().len() == 2
-    assert set(table["status"].to_list()) == {"OK"}
+    assert set(table["status"].to_list()) == {"CRITICAL"}
 
 
 def test_temporal_metrics_mark_single_class_periods_insufficient() -> None:

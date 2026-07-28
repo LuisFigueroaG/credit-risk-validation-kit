@@ -134,6 +134,7 @@ class PDValidationSuite:
             weight_col=columns.weight,
             validation=validation,
             calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+            oe_ratio_threshold=self.config.thresholds.oe_ratio,
         )
         metrics.update(discrimination)
         metrics.update(calibration)
@@ -213,6 +214,7 @@ class PDValidationSuite:
             weight_col=columns.weight,
             validation=validation,
             calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+            oe_ratio_threshold=self.config.thresholds.oe_ratio,
         )
         if current is not None:
             current_discrimination, current_lift = discrimination_from_frame(
@@ -229,6 +231,7 @@ class PDValidationSuite:
                 weight_col=columns.weight,
                 validation=validation,
                 calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+                oe_ratio_threshold=self.config.thresholds.oe_ratio,
             )
             discrimination = _attach_current_values(
                 discrimination,
@@ -403,6 +406,7 @@ class PDValidationSuite:
             weight_col=self.config.columns.weight,
             validation=self.config.validation,
             calibration_abs_error_threshold=self.config.thresholds.calibration_abs_error,
+            oe_ratio_threshold=self.config.thresholds.oe_ratio,
         )
         metric_statuses = [
             metric.status for metric in [*discrimination.values(), *calibration.values()]

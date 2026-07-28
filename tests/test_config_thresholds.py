@@ -24,6 +24,22 @@ def test_threshold_values_must_be_finite(field: str, value: float) -> None:
 
 
 @pytest.mark.parametrize(
+    "field",
+    [
+        "warning",
+        "critical",
+        "warning_low",
+        "warning_high",
+        "critical_low",
+        "critical_high",
+    ],
+)
+def test_threshold_values_must_be_non_negative(field: str) -> None:
+    with pytest.raises(ValidationError, match="threshold values must be non-negative"):
+        ThresholdConfig(**{field: -0.01})
+
+
+@pytest.mark.parametrize(
     "values",
     [
         {"warning": 0.2, "critical": 0.1},

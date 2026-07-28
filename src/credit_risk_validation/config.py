@@ -123,6 +123,8 @@ class ThresholdConfig(BaseModel):
     def _finite_threshold(cls, value: float | None) -> float | None:
         if value is not None and not isfinite(value):
             raise ValueError("threshold values must be finite")
+        if value is not None and value < 0:
+            raise ValueError("threshold values must be non-negative")
         return value
 
     @model_validator(mode="after")
