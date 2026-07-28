@@ -87,6 +87,10 @@ uv run crvk pd-drift \
 - Segments: aggregate discrimination and calibration summaries by configured
   segments when sample size is sufficient.
 
+KS and lift treat tied scores as a single risk level. Configured calibration
+thresholds drive metric and overall statuses, including two-sided O/E limits.
+Drift reports retain separate reference and current lift/calibration evidence.
+
 ## Report Preview
 
 The main HTML validation report contains a cover, executive summary, data quality
