@@ -24,6 +24,27 @@ VALIDATION_METRICS = [
     ("oe_ratio", "O/E Ratio"),
 ]
 
+CALIBRATION_METRICS = [
+    ("brier", "Brier"),
+    ("log_loss", "Log Loss"),
+    ("ece", "ECE"),
+    ("mce", "MCE"),
+    ("oe_ratio", "O/E Ratio"),
+    ("calibration_in_the_large", "Calibration-in-the-large"),
+    ("calibration_intercept", "Calibration Intercept"),
+    ("calibration_slope", "Calibration Slope"),
+]
+
+DEFAULT_REPORT_TITLE = "PD Model Validation Report"
+STATUS_CLASSES = {
+    "OK": "ok",
+    "WARNING": "warning",
+    "CRITICAL": "critical",
+    "ERROR": "error",
+    "INSUFFICIENT_DATA": "insufficient_data",
+    "NOT_APPLICABLE": "not_applicable",
+}
+
 DRIFT_METRICS = [
     *VALIDATION_METRICS,
     ("psi_pd", "PSI PD"),
@@ -35,7 +56,13 @@ def render_html_report(result: "PDValidationResult") -> str:
     """Renderiza un reporte HTML autocontenido con tablas agregadas."""
 
     locale = translations(result.config.report.language)
-    title = escape(result.config.report.title)
+    configured_title = result.config.report.title
+    localized_title = (
+        t(locale, "report_title")
+        if configured_title == DEFAULT_REPORT_TITLE and result.config.report.language != "en"
+        else configured_title
+    )
+    title = escape(localized_title)
     model = result.config.model
     columns = result.config.columns
     chart_sections = (
@@ -65,7 +92,7 @@ def render_html_report(result: "PDValidationResult") -> str:
 </head>
 <body>
   <div class="app-shell">
-    {_sidebar(default_view, include_methodology=result.config.report.include_methodology, include_stability=is_drift)}
+    {_sidebar(default_view, include_methodology=result.config.report.include_methodology, include_model_card=result.config.report.include_model_card, include_stability=is_drift)}
     <div class="report-window">
       <header class="topbar">
         <div>
@@ -76,12 +103,8 @@ def render_html_report(result: "PDValidationResult") -> str:
             <span>{t(locale, "generated_at")}: {escape(_short_datetime(result.created_at))}</span>
           </div>
         </div>
-        <div class="header-actions" aria-label="Report actions">
-          <button type="button">{_icon("download")} Download</button>
-          <button type="button" class="primary">{_icon("share")} Share Report</button>
-        </div>
       </header>
-      {_tabs(locale, default_view, include_methodology=result.config.report.include_methodology, include_stability=is_drift)}
+      {_tabs(locale, default_view, include_methodology=result.config.report.include_methodology, include_model_card=result.config.report.include_model_card, include_stability=is_drift)}
       <main>
         <section id="view-overview" {_view_attrs("overview", default_view)}>
           <div class="section-heading">
@@ -91,7 +114,7 @@ def render_html_report(result: "PDValidationResult") -> str:
             </div>
             <span class="status-pill {escape(result.status.value.lower())}">{escape(result.status.value)}</span>
           </div>
-          {_status_banner(result.status.value, locale, is_drift=is_drift)}
+          {_status_banner(result, locale)}
           {_kpi_grid(result, overview_metrics, class_name="overview-kpi-grid")}
           <div class="overview-grid">
             <article class="card findings-card">
@@ -125,6 +148,7 @@ def render_html_report(result: "PDValidationResult") -> str:
           {_kpi_grid(result, [("auc", "AUC"), ("gini", "Gini"), ("ks", "KS")])}
           <div class="chart-grid two-col">{chart_sections["discrimination"]}</div>
           {_table_panel("lift_table", result.tables.get("lift_table"), locale)}
+          {_table_panel("current_lift_table", result.tables.get("current_lift_table"), locale)}
         </section>
 
         <section id="view-calibration" {_view_attrs("calibration", default_view)}>
@@ -135,15 +159,16 @@ def render_html_report(result: "PDValidationResult") -> str:
               <p>{t(locale, "calibration_body")}</p>
             </div>
           </div>
-          {_kpi_grid(result, [("brier", "Brier"), ("log_loss", "Log Loss"), ("ece", "ECE"), ("oe_ratio", "O/E Ratio")])}
+          {_kpi_grid(result, CALIBRATION_METRICS)}
           <div class="panel-grid calibration-grid">
             <article class="card chart-card">{chart_sections["calibration"]}</article>
             <article class="card insight-card">
               <div class="card-title"><h3>Calibration Evidence</h3></div>
-              {_metric_delta_list(result, ["brier", "log_loss", "ece", "oe_ratio"])}
+              {_metric_delta_list(result, [name for name, _ in CALIBRATION_METRICS])}
             </article>
           </div>
           {_table_panel("calibration_bins", result.tables.get("calibration_bins"), locale)}
+          {_table_panel("current_calibration_bins", result.tables.get("current_calibration_bins"), locale)}
         </section>
 
         {stability_section}
@@ -1238,7 +1263,13 @@ def _view_attrs(view: str, default_view: str) -> str:
     return f'class="view-section{active_class}" data-view="{escape(view)}"{hidden}'
 
 
-def _sidebar(default_view: str, *, include_methodology: bool, include_stability: bool) -> str:
+def _sidebar(
+    default_view: str,
+    *,
+    include_methodology: bool,
+    include_model_card: bool,
+    include_stability: bool,
+) -> str:
     items = [
         ("overview", "grid"),
         ("discrimination", "trend"),
@@ -1251,6 +1282,8 @@ def _sidebar(default_view: str, *, include_methodology: bool, include_stability:
         items.insert(3, ("stability", "pulse"))
     if include_methodology:
         items.insert(-1, ("methodology", "book"))
+    if include_model_card:
+        items.insert(-1, ("model-card", "shield"))
     links = "\n".join(
         f'<a class="side-link {"active" if anchor == default_view else ""}" href="#{anchor}" data-view-target="{anchor}" aria-label="{anchor}">{_icon(icon)}</a>'
         for anchor, icon in items
@@ -1269,6 +1302,7 @@ def _tabs(
     default_view: str,
     *,
     include_methodology: bool,
+    include_model_card: bool,
     include_stability: bool,
 ) -> str:
     tabs = [
@@ -1282,6 +1316,8 @@ def _tabs(
         tabs.insert(3, ("stability", "pulse", t(locale, "stability_title")))
     if include_methodology:
         tabs.append(("methodology", "book", t(locale, "methodology_title")))
+    if include_model_card:
+        tabs.append(("model-card", "shield", t(locale, "model_card")))
     return (
         '<nav class="tabs" aria-label="Report sections">'
         + "\n".join(
@@ -1292,9 +1328,12 @@ def _tabs(
     )
 
 
-def _status_banner(status: str, locale: dict[str, str], *, is_drift: bool) -> str:
+def _status_banner(result: "PDValidationResult", locale: dict[str, str]) -> str:
+    status = result.status.value
     status_class = _status_class(status)
-    if status == "CRITICAL":
+    if status == "ERROR":
+        message = "One or more validation metrics could not be calculated."
+    elif status == "CRITICAL":
         message = "One or more validation metrics breached a critical threshold."
     elif status == "WARNING":
         message = "One or more validation metrics require review."
@@ -1310,28 +1349,63 @@ def _status_banner(status: str, locale: dict[str, str], *, is_drift: bool) -> st
         <strong>{escape(status)}</strong>
         <p>{escape(message)}</p>
       </div>
-      {_threshold_legend(locale) if is_drift else ""}
+      {_threshold_legend(result, locale) if _is_drift(result) else ""}
     </div>
     """
 
 
-def _threshold_legend(locale: dict[str, str]) -> str:
-    return f"""
-      <div class="threshold-legend">
-        <span><i class="legend-dot warning"></i>{t(locale, "threshold_warning")} 0.10</span>
-        <span><i class="legend-dot critical"></i>{t(locale, "threshold_critical")} 0.25</span>
-      </div>
-    """
+def _threshold_legend(result: "PDValidationResult", locale: dict[str, str]) -> str:
+    warning, critical = _psi_thresholds(result)
+    entries = []
+    if warning is not None:
+        entries.append(
+            f'<span><i class="legend-dot warning"></i>{t(locale, "threshold_warning")} {warning:.2f}</span>'
+        )
+    if critical is not None:
+        entries.append(
+            f'<span><i class="legend-dot critical"></i>{t(locale, "threshold_critical")} {critical:.2f}</span>'
+        )
+    if not entries:
+        return ""
+    return f'<div class="threshold-legend">{"".join(entries)}</div>'
 
 
-def _stability_banner(result: "PDValidationResult") -> str:
+def _psi_thresholds(result: "PDValidationResult") -> tuple[float | None, float | None]:
+    """Obtiene los umbrales PSI efectivos sin asumir los valores por defecto."""
+
+    warning: float | None = None
+    critical: float | None = None
+    candidates = [metric for name, metric in result.metrics.items() if name.startswith("psi_")]
+    for metric in candidates:
+        warning = warning if warning is not None else metric.threshold_warning
+        critical = critical if critical is not None else metric.threshold_critical
+        if warning is not None and critical is not None:
+            break
+    configured = result.config.thresholds.psi
+    return (
+        warning if warning is not None else configured.warning,
+        critical if critical is not None else configured.critical,
+    )
+
+
+def _stability_banner(result: "PDValidationResult", locale: dict[str, str]) -> str:
     psi_statuses = [
         metric.status.value
         for name, metric in result.metrics.items()
         if name.startswith("psi_") and metric.status.value in {"WARNING", "CRITICAL", "ERROR"}
     ]
-    status = "CRITICAL" if "CRITICAL" in psi_statuses else "WARNING" if psi_statuses else "OK"
-    if status == "CRITICAL":
+    status = (
+        "ERROR"
+        if "ERROR" in psi_statuses
+        else "CRITICAL"
+        if "CRITICAL" in psi_statuses
+        else "WARNING"
+        if psi_statuses
+        else "OK"
+    )
+    if status == "ERROR":
+        message = "One or more stability metrics could not be calculated."
+    elif status == "CRITICAL":
         message = "One or more stability metrics have breached the critical threshold."
     elif status == "WARNING":
         message = "One or more stability metrics are above the warning threshold."
@@ -1345,10 +1419,7 @@ def _stability_banner(result: "PDValidationResult") -> str:
         <strong>{escape(status)}</strong>
         <p>{escape(message)}</p>
       </div>
-      <div class="threshold-legend">
-        <span><i class="legend-dot warning"></i>Warning 0.10</span>
-        <span><i class="legend-dot critical"></i>Critical 0.25</span>
-      </div>
+      {_threshold_legend(result, locale)}
     </div>
     """
 
@@ -1368,7 +1439,7 @@ def _stability_section(
           <p>{t(locale, "stability_body")}</p>
         </div>
       </div>
-      {_stability_banner(result)}
+      {_stability_banner(result, locale)}
       <div class="panel-grid stability-grid">
         {_psi_variable_card(result, locale)}
         {_distribution_card(result, "psi_pd", "PD Distribution", "PD")}
@@ -1445,12 +1516,16 @@ def _kpi_grid(
     *,
     class_name: str = "",
 ) -> str:
-    cards = "\n".join(_kpi_card(result.metrics.get(name), label) for name, label in metrics)
+    prefer_current = _is_drift(result)
+    cards = "\n".join(
+        _kpi_card(result.metrics.get(name), label, prefer_current=prefer_current)
+        for name, label in metrics
+    )
     classes = " ".join(name for name in ["kpi-grid", class_name] if name)
     return f'<div class="{escape(classes)}">{cards}</div>'
 
 
-def _kpi_card(metric: "MetricResult | None", label: str) -> str:
+def _kpi_card(metric: "MetricResult | None", label: str, *, prefer_current: bool = False) -> str:
     status = metric.status.value if metric else "NOT_APPLICABLE"
     delta = metric.delta if metric else None
     metric_name = metric.name if metric else None
@@ -1468,13 +1543,18 @@ def _kpi_card(metric: "MetricResult | None", label: str) -> str:
         )
         or "<span>No comparison</span>"
     )
+    uses_current = bool(metric and prefer_current and metric.current_value is not None)
+    primary_value = (
+        metric.current_value if uses_current and metric else metric.value if metric else None
+    )
+    primary_source = "current" if uses_current else "value"
     return f"""
     <article class="kpi-card {_status_class(status)}">
       <div class="kpi-top">
         <span class="kpi-label">{escape(label)}</span>
         <span class="status-pill {_status_class(status)}">{escape(status)}</span>
       </div>
-      <strong class="kpi-value">{_format_metric_value(metric.value if metric else None, metric_name) or "-"}</strong>
+      <strong class="kpi-value" data-value-source="{primary_source}">{_format_metric_value(primary_value, metric_name) or "-"}</strong>
       <div class="kpi-meta">{meta_html}</div>
     </article>
     """
@@ -1532,7 +1612,11 @@ def _psi_variable_card(result: "PDValidationResult", locale: dict[str, str]) -> 
     if table is None or table.is_empty():
         return _empty_card("PSI by Variable", "No PSI variable summary was generated.")
     rows = sorted(table.to_dicts(), key=lambda row: float(row.get("psi") or 0), reverse=True)
-    max_value = max([float(row.get("psi") or 0) for row in rows] + [0.25])
+    _, critical = _psi_thresholds(result)
+    max_value = max(
+        [float(row.get("psi") or 0) for row in rows]
+        + ([critical] if critical is not None else [0.0])
+    )
     body = "\n".join(
         f"""
         <div class="psi-row">
@@ -1543,11 +1627,14 @@ def _psi_variable_card(result: "PDValidationResult", locale: dict[str, str]) -> 
         """
         for row in rows
     )
+    critical_label = (
+        f"{t(locale, 'threshold_critical')} {critical:.2f}" if critical is not None else ""
+    )
     return f"""
     <article class="card">
       <div class="card-title">
         <h3>PSI by Variable</h3>
-        <span>{t(locale, "threshold_critical")} 0.25</span>
+        <span>{critical_label}</span>
       </div>
       <div class="psi-bars">{body}</div>
     </article>
@@ -1621,7 +1708,21 @@ def _segment_drift_panel(result: "PDValidationResult", locale: dict[str, str]) -
     table = result.tables.get("segment_drift")
     if table is None or table.is_empty():
         return ""
-    source_rows = table.to_dicts()
+    grouped_rows: dict[str, list[dict[str, object]]] = {}
+    for row in table.to_dicts():
+        column = str(row.get("segment_column") or t(locale, "segment_x"))
+        grouped_rows.setdefault(column, []).append(row)
+    return "\n".join(
+        _segment_drift_group(column, source_rows, locale)
+        for column, source_rows in grouped_rows.items()
+    )
+
+
+def _segment_drift_group(
+    column: str, source_rows: list[dict[str, object]], locale: dict[str, str]
+) -> str:
+    """Renderiza drift de una variable sin agregar PSI de otras variables."""
+
     rows = [_segment_drift_row(row) for row in source_rows]
     total = _segment_drift_total(source_rows)
     if total:
@@ -1647,11 +1748,14 @@ def _segment_drift_panel(result: "PDValidationResult", locale: dict[str, str]) -
         + "</tr>"
         for row in rows
     )
-    header_html = "".join(f"<th>{escape(header)}</th>" for header in headers)
+    header_html = "".join(
+        f"<th>{escape(_labelize_header(header.lower().replace(' ', '_'), locale))}</th>"
+        for header in headers
+    )
     return f"""
     <article class="table-panel segment-drift-panel">
       <div class="table-title">
-        <h3>Segment Drift</h3>
+        <h3>{t(locale, "segment_drift")}: {escape(column)}</h3>
         <span>{len(source_rows)} rows</span>
       </div>
       <div class="table-wrap">
@@ -1773,7 +1877,7 @@ def _model_card_section(result: "PDValidationResult", locale: dict[str, str]) ->
         )
     )
     return f"""
-    <section id="model-card" class="view-section" data-view="methodology" hidden>
+    <section id="model-card" class="view-section" data-view="model-card" hidden>
       <div class="section-heading">
         <div>
           <p class="eyebrow">Governance</p>
@@ -1903,7 +2007,8 @@ def _table_cell(header: str, value: object) -> str:
     float_value = _float_or_none(value)
     if float_value is not None and lower_header.endswith("delta"):
         class_names.append("negative" if float_value < 0 else "positive" if float_value > 0 else "")
-    class_attr = f' class="{" ".join(name for name in class_names if name)}"' if class_names else ""
+    safe_classes = " ".join(name for name in class_names if name)
+    class_attr = f' class="{escape(safe_classes, quote=True)}"' if safe_classes else ""
     return f"<td{class_attr}>{escape(_format_cell(value, header=header))}</td>"
 
 
@@ -1994,7 +2099,6 @@ def _format_cell(value: object, *, header: str = "") -> str:
             "pd_max",
             "observed_rate",
             "event_rate",
-            "oe_ratio",
         }:
             return _format_percent(numeric_value, decimals=2)
         if "score" in lower_header:
@@ -2061,7 +2165,7 @@ def _bar_width(value: object, max_value: float) -> str:
 
 
 def _status_class(status: str) -> str:
-    return status.lower().replace(" ", "_")
+    return STATUS_CLASSES.get(status.upper(), "unknown")
 
 
 def _short_datetime(value: str) -> str:
@@ -2096,13 +2200,24 @@ def _lift_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figu
     if table is None or table.is_empty():
         return None
     rows = table.to_dicts()
+    current_table = result.tables.get("current_lift_table")
+    current_rows = (
+        current_table.to_dicts()
+        if current_table is not None and not current_table.is_empty()
+        else []
+    )
+    has_current = bool(current_rows)
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=[row["bin"] for row in rows],
             y=[row["cumulative_event_capture"] for row in rows],
             mode="lines+markers",
-            name="Cumulative event capture",
+            name=(
+                t(locale, "reference_event_capture")
+                if has_current
+                else t(locale, "cumulative_event_capture")
+            ),
             line={"width": 3, "color": "#1d4ed8"},
             marker={"size": 7},
         )
@@ -2112,11 +2227,36 @@ def _lift_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.Figu
             x=[row["bin"] for row in rows],
             y=[row["cumulative_population_share"] for row in rows],
             mode="lines+markers",
-            name="Cumulative population share",
+            name=(
+                t(locale, "reference_population_share")
+                if has_current
+                else t(locale, "cumulative_population_share")
+            ),
             line={"width": 3, "color": "#0f2f5f"},
             marker={"size": 7},
         )
     )
+    if has_current:
+        figure.add_trace(
+            go.Scatter(
+                x=[row["bin"] for row in current_rows],
+                y=[row["cumulative_event_capture"] for row in current_rows],
+                mode="lines+markers",
+                name=t(locale, "current_event_capture"),
+                line={"width": 3, "color": "#f59e0b"},
+                marker={"size": 7},
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[row["bin"] for row in current_rows],
+                y=[row["cumulative_population_share"] for row in current_rows],
+                mode="lines+markers",
+                name=t(locale, "current_population_share"),
+                line={"width": 3, "color": "#dc2626"},
+                marker={"size": 7},
+            )
+        )
     figure.update_layout(
         title=t(locale, "lift_capture_title"),
         xaxis_title=t(locale, "risk_bin"),
@@ -2131,19 +2271,36 @@ def _bad_rate_chart(result: "PDValidationResult", locale: dict[str, str]) -> go.
     if table is None or table.is_empty():
         return None
     rows = table.to_dicts()
-    figure = go.Figure(
+    current_table = result.tables.get("current_lift_table")
+    current_rows = (
+        current_table.to_dicts()
+        if current_table is not None and not current_table.is_empty()
+        else []
+    )
+    figure = go.Figure()
+    figure.add_trace(
         go.Bar(
             x=[row["bin"] for row in rows],
             y=[row["bad_rate"] for row in rows],
-            name="Bad rate",
+            name=(t(locale, "reference_bad_rate") if current_rows else t(locale, "bad_rate")),
             marker={"color": "#1d4ed8", "line": {"color": "#1e40af", "width": 1}},
         )
     )
+    if current_rows:
+        figure.add_trace(
+            go.Bar(
+                x=[row["bin"] for row in current_rows],
+                y=[row["bad_rate"] for row in current_rows],
+                name=t(locale, "current_bad_rate"),
+                marker={"color": "#f59e0b", "line": {"color": "#b45309", "width": 1}},
+            )
+        )
     figure.update_layout(
         title=t(locale, "bad_rate_by_risk_bin"),
         xaxis_title=t(locale, "risk_bin"),
-        yaxis_title="Bad rate",
+        yaxis_title=t(locale, "bad_rate"),
         yaxis_tickformat=".0%",
+        barmode="group",
     )
     return _style_figure(figure, height=360)
 
@@ -2153,27 +2310,51 @@ def _calibration_chart(result: "PDValidationResult", locale: dict[str, str]) -> 
     if table is None or table.is_empty():
         return None
     rows = table.to_dicts()
+    current_table = result.tables.get("current_calibration_bins")
+    current_rows = (
+        current_table.to_dicts()
+        if current_table is not None and not current_table.is_empty()
+        else []
+    )
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=[row["mean_pd"] for row in rows],
             y=[row["observed_rate"] for row in rows],
             mode="markers+lines",
-            name="Observed default rate",
+            name=(
+                t(locale, "reference_observed_rate")
+                if current_rows
+                else t(locale, "observed_default_rate")
+            ),
             line={"width": 3, "color": "#1d4ed8"},
             marker={"size": 8, "color": "#1d4ed8"},
         )
     )
+    if current_rows:
+        figure.add_trace(
+            go.Scatter(
+                x=[row["mean_pd"] for row in current_rows],
+                y=[row["observed_rate"] for row in current_rows],
+                mode="markers+lines",
+                name=t(locale, "current_observed_rate"),
+                line={"width": 3, "color": "#f59e0b"},
+                marker={"size": 8, "color": "#f59e0b"},
+            )
+        )
     max_axis = max(
         [float(row["mean_pd"] or 0) for row in rows]
         + [float(row["observed_rate"] or 0) for row in rows]
+        + [float(row["mean_pd"] or 0) for row in current_rows]
+        + [float(row["observed_rate"] or 0) for row in current_rows]
+        + [0.01]
     )
     figure.add_trace(
         go.Scatter(
             x=[0, max_axis],
             y=[0, max_axis],
             mode="lines",
-            name="Perfect calibration",
+            name=t(locale, "perfect_calibration"),
             line={"dash": "dash", "width": 2, "color": "#64748b"},
         )
     )
@@ -2183,6 +2364,10 @@ def _calibration_chart(result: "PDValidationResult", locale: dict[str, str]) -> 
         yaxis_title=t(locale, "calibration_y"),
         xaxis_tickformat=".0%",
         yaxis_tickformat=".0%",
+        xaxis_range=[0, max_axis],
+        yaxis_range=[0, max_axis],
+        yaxis_scaleanchor="x",
+        yaxis_scaleratio=1,
     )
     return _style_figure(figure, height=390)
 
